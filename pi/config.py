@@ -13,7 +13,9 @@ CONFIG_PATH = ROOT / "config.env"
 def load_config(path: Path = CONFIG_PATH) -> dict[str, str]:
     """Read KEY=VALUE pairs and allow Docker/CI environment overrides."""
     values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    # utf-8-sig also accepts normal UTF-8 while tolerating files saved by
+    # Windows editors with a byte-order mark.
+    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

@@ -8,7 +8,7 @@ This mini project puts an inspecting MQTT proxy in front of a real IoT broker an
 
 - Raspberry Pi OS is Debian-based, uses `apt`, has Python 3.11 or newer, and runs the scripts as a normal sudo-capable user.
 - Because `config.env` is sourced by Bash, configuration values (especially the password) are shell-safe text without spaces, `#`, quotes, or command-substitution characters.
-- The automated smoke test runs on Linux. Native Windows lifecycle scripts are included; WSL is needed only for the exact Bash smoke-test automation.
+- Native Windows and Linux/Pi lifecycle and smoke-test scripts are provided; neither Windows path requires WSL, a VM, or Docker.
 - MQTT 3.1.1 is the inspected protocol because that is what PubSubClient uses. Other protocol levels are forwarded to the selected backend and explicitly logged without deep inspection.
 - The proxy and brokers run on one Pi, so backend connections use `127.0.0.1`. Only values intended to vary are stored in `config.env`; broker templates are rendered from it into `run/`.
 - A score lives in proxy memory and resets when the proxy restarts. Audit records remain in SQLite.
@@ -69,7 +69,7 @@ Edit only `config.env` for the gateway and Python tools. Comma-separated IP list
 - `ALERT_*` enables cooldown-controlled JSON-line logging and an optional HTTP webhook for high/critical activity.
 - `REAL_USER`, `REAL_PASS`: used by the real broker, simulator, ESP32, phone, and legitimate CLI clients.
 
-After changing credentials, rerun `pi/setup_pi.sh` to regenerate `data/real.passwd`.
+After changing credentials, rerun `pi/setup_pi.sh` on Linux/Pi or `windows/setup.ps1` on Windows to regenerate `data/real.passwd`.
 
 ## Raspberry Pi quick start
 
@@ -95,37 +95,24 @@ bash pi/stop_all.sh
 
 Logs are in `logs/`, PID files and rendered broker configurations are in `run/`, and durable evidence is in `data/honeypot.db`.
 
-## Laptop-only test
+## Native Windows Development
 
-### Windows Python setup
+Install 64-bit Python 3.11 or newer and the native [Mosquitto for Windows](https://mosquitto.org/download/). Mosquitto supplies `mosquitto.exe`, `mosquitto_passwd.exe`, and the `mosquitto_sub.exe` client used by the smoke test. Its default `C:\Program Files\Mosquitto` directory is detected automatically; no Bash, WSL, VM, or Docker is required.
 
-On Windows PowerShell, create an isolated environment and install the project dependencies with:
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pytest -q
-```
-
-If PowerShell blocks the activation script, use the virtual-environment Python directly instead of changing the machine execution policy:
+Run setup from an elevated PowerShell if the Mosquitto installer created its automatic Windows service; setup stops and disables that conflicting broker, matching the existing Pi setup. The remaining commands can run from a normal PowerShell window at the repository root:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pytest -q
+.\windows\setup.ps1
+.\windows\run_all.ps1
+.\tests\smoke_test.ps1
+.\windows\stop_all.ps1
 ```
 
-Mosquitto is a separate native application and is therefore not included in `requirements.txt`. Install its Windows build and add it to `PATH`, then run the complete native stack with:
+Setup verifies Python and pip, creates `.venv`, installs `requirements.txt`, creates `data\`, `logs\`, and `run\`, generates the hashed real-broker password file, and renders native broker configurations. The run script starts the same five logical components as `pi/run_all.sh`; process identity and logs are stored under `run\` and `logs\`. No activation or Bash `source` command is needed because Python and PowerShell read `config.env` directly.
 
-```powershell
-.\pi\setup_windows.ps1
-.\pi\run_all.ps1
-# Stop later with:
-.\pi\stop_all.ps1
-```
+With the default configuration, open <http://127.0.0.1:5000>. The Windows smoke test preserves any existing SQLite database while it runs, uses whitelisted `127.0.0.1` for the legitimate simulator, and asks Python sockets to bind suspicious traffic to `127.0.0.2`. Current Windows versions normally route the IPv4 loopback block without a Linux-style loopback alias. If local security/network software prevents that bind, the test fails rather than forging an identity or weakening Pi/production behavior; use a second physical test host for the full source-isolation check. More detail is in `windows/README.md`.
 
-The automated `tests/smoke_test.sh` lifecycle remains Linux-oriented; on Windows use WSL/Ubuntu for that exact script. The PowerShell lifecycle preserves the same ports, logs, PID files, brokers, proxy, decoy, and dashboard.
+## Laptop-only Linux test
 
 Use Ubuntu/Debian, including a Linux VM whose networking permits loopback aliases. Install base packages, clone/copy the repository, and set `PI_IP=127.0.0.1`, keep `127.0.0.1` in `WHITELIST_IPS`, set `ESP32_IP=127.0.0.1`, leave `DECOY_FORCE_IPS` empty, and ensure `127.0.0.2` is not whitelisted.
 
@@ -177,6 +164,8 @@ Shell variables are available after `set -a; source config.env; set +a`. Open `h
 bash tests/smoke_test.sh
 .venv/bin/python pi/analysis/analyze.py --output data/analysis.csv
 ```
+
+On native Windows, use `tests\smoke_test.ps1` in place of the Bash smoke test.
 
 Unit tests cover all scoring signals, four adaptive levels, caps, decay, whitelist, forced routes, persistence, migrations, classification, fingerprints, alert cooldown, profiles, evaluation, APIs, dashboard rendering, malformed packets, and MQTT packet framing. The smoke test deliberately refuses to run when the laptop configuration is unsafe or inconsistent.
 
@@ -257,6 +246,7 @@ The report covers detection/false-positive rates when labels exist, first high/c
 
 ```text
 config.env                 single runtime configuration
+windows/                   native Windows setup/start/stop lifecycle
 pi/                        gateway, brokers, database, dashboard, analysis
 esp32/esp32_node/          Arduino sketch
 sim/                       hardware-free ESP32 simulator
