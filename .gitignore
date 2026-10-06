@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+data/*.db*
+data/*.csv
+logs/
+run/
+sim/relay_state.txt
+work/

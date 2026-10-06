@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="3">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Adaptive IoT Honeypot</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 2rem; background: #10141d; color: #e8edf5; }
+    h1, h2 { color: #7dd3fc; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); gap: 1rem; }
+    section { background: #18202d; padding: 1rem; border-radius: .7rem; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { padding: .45rem; border-bottom: 1px solid #334155; text-align: left; white-space: nowrap; }
+    .allow { color: #86efac; } .throttle { color: #fde047; } .decoy { color: #fca5a5; }
+    code { color: #c4b5fd; }
+  </style>
+</head>
+<body>
+  <h1>Adaptive IoT Honeypot</h1>
+  <p>Auto-refreshes every 3 seconds. Times are Unix timestamps from the gateway.</p>
+  <div class="grid">
+    <section><h2>Current risk by IP</h2><table><tr><th>IP</th><th>Score</th><th>Action</th><th>Last detail</th></tr>
+      {% for row in scores %}<tr><td>{{ row.ip }}</td><td>{{ '%.1f'|format(row.score) }}</td><td class="{{ row.action }}">{{ row.action }}</td><td>{{ row.detail }}</td></tr>{% else %}<tr><td colspan="4">No events yet</td></tr>{% endfor %}
+    </table></section>
+    <section><h2>Sessions</h2><table><tr><th>IP</th><th>Backend</th><th>Start</th><th>End</th></tr>
+      {% for row in sessions %}<tr><td>{{ row.ip }}</td><td>{{ row.backend }}</td><td>{{ '%.3f'|format(row.start) }}</td><td>{{ '%.3f'|format(row.end) if row.end else 'active' }}</td></tr>{% endfor %}
+    </table></section>
+  </div>
+  <section><h2>Redirect and scoring log</h2><table><tr><th>Time</th><th>IP</th><th>Action</th><th>Score</th><th>Detail</th></tr>
+    {% for row in events %}<tr><td>{{ '%.3f'|format(row.time) }}</td><td>{{ row.ip }}</td><td class="{{ row.action }}">{{ row.action }}</td><td>{{ '%.1f'|format(row.score) }}</td><td>{{ row.detail }}</td></tr>{% endfor %}
+  </table></section>
+  <section><h2>Decoy messages</h2><table><tr><th>Time</th><th>Source IP</th><th>Topic</th><th>Payload</th></tr>
+    {% for row in messages %}<tr><td>{{ '%.3f'|format(row.time) }}</td><td>{{ row.ip }}</td><td><code>{{ row.topic }}</code></td><td>{{ row.payload }}</td></tr>{% else %}<tr><td colspan="4">No attacker messages yet</td></tr>{% endfor %}
+  </table></section>
+</body>
+</html>
+
