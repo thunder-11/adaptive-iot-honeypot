@@ -5,6 +5,7 @@ __pycache__/
 pytest-cache-files-*/
 data/*.db*
 data/*.csv
+data/*.json
 logs/
 run/
 sim/relay_state.txt

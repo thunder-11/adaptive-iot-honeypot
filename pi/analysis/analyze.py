@@ -18,12 +18,18 @@ from pi import db
 def classify(details: list[str], topics: list[str]) -> list[str]:
     labels: list[str] = []
     if sum("failed auth" in item for item in details) >= 3:
-        labels.append("brute-force")
+        labels.append("Brute Force")
     if any("wildcard subscribe" in item for item in details):
-        labels.append("wildcard recon")
+        labels.append("Reconnaissance")
+    if any("topic enumeration" in item for item in details):
+        labels.append("MQTT Enumeration")
     if "home/door/lock" in topics or any("command publish" in item for item in details):
-        labels.append("unauthorized publish/spoof")
-    return labels or ["unclassified"]
+        labels.append("Unauthorized/Suspicious Publish")
+    if any("malformed" in item or "sequence" in item or "protocol" in item for item in details):
+        labels.append("Command/Protocol Abuse")
+    if any("frequency exceeded" in item for item in details):
+        labels.append("Flooding/DoS")
+    return labels or ["Unclassified"]
 
 
 def main() -> None:

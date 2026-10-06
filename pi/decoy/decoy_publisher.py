@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import random
 import sys
 import time
@@ -15,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from pi.config import integer, load_config
+from pi.decoy.profiles import load_profiles, select_profile
 
 
 def on_connect(client: mqtt.Client, _userdata: object, _flags: dict, reason_code: int,
@@ -30,17 +30,22 @@ def on_message(_client: mqtt.Client, _userdata: object, message: mqtt.MQTTMessag
 
 def main() -> None:
     config = load_config()
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="decoy-publisher")
+    profile_name, selected = select_profile(config.get("DECOY_PROFILE", "auto"))
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
+                         client_id=f"decoy-{profile_name}-publisher")
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect("127.0.0.1", integer(config, "DECOY_PORT"), 30)
+    client.connect(config.get("DECOY_HOST", "127.0.0.1"), integer(config, "DECOY_PORT"), 30)
     client.loop_start()
+    print(f"active decoy profile={profile_name} device={selected['device_name']} "
+          f"firmware={selected['firmware']}", flush=True)
     try:
-        locked = True
+        # Publish every configured profile so reconnaissance sees a small, plausible IoT estate.
+        profiles = load_profiles()
         while True:
-            motion = random.choice([0, 0, 0, 1])
-            client.publish("home/door/motion", str(motion), retain=True)
-            client.publish("home/door/status", json.dumps({"locked": locked, "source": "door-node"}), retain=True)
+            for profile in profiles.values():
+                for topic, values in profile["topics"].items():
+                    client.publish(topic, random.choice(values), retain=True)
             time.sleep(3)
     except KeyboardInterrupt:
         pass

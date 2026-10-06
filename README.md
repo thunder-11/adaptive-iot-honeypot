@@ -1,6 +1,6 @@
 # Adaptive IoT Honeypot with Risk-Based Traffic Redirection
 
-This mini project puts an inspecting MQTT proxy in front of a real IoT broker and a decoy broker. A low-risk client reaches the real device; suspicious behavior raises a per-IP score, adds a delay at medium risk, and sends subsequent connections to a safe decoy at high risk. The same project runs with a simulated ESP32 when no hardware is available.
+This mini project puts an inspecting MQTT proxy in front of a real IoT broker and a decoy broker. Explainable behavioral signals raise a persistent per-IP score: low risk reaches the real device, medium risk is throttled, high risk is restricted, and critical risk reconnects to a safe decoy. The same project runs with a simulated ESP32 when no hardware is available.
 
 > Use `attacker/attack.py` only on a network and systems you own or are explicitly authorized to test.
 
@@ -8,7 +8,7 @@ This mini project puts an inspecting MQTT proxy in front of a real IoT broker an
 
 - Raspberry Pi OS is Debian-based, uses `apt`, has Python 3.11 or newer, and runs the scripts as a normal sudo-capable user.
 - Because `config.env` is sourced by Bash, configuration values (especially the password) are shell-safe text without spaces, `#`, quotes, or command-substitution characters.
-- The laptop-only smoke test runs on Linux. On macOS, add the loopback alias noted below. The supplied shell lifecycle is not intended for native Windows.
+- The automated smoke test runs on Linux. Native Windows lifecycle scripts are included; WSL is needed only for the exact Bash smoke-test automation.
 - MQTT 3.1.1 is the inspected protocol because that is what PubSubClient uses. Other protocol levels are forwarded to the selected backend and explicitly logged without deep inspection.
 - The proxy and brokers run on one Pi, so backend connections use `127.0.0.1`. Only values intended to vary are stored in `config.env`; broker templates are rendered from it into `run/`.
 - A score lives in proxy memory and resets when the proxy restarts. Audit records remain in SQLite.
@@ -38,19 +38,20 @@ This mini project puts an inspecting MQTT proxy in front of a real IoT broker an
        SQLite + Flask :5000
 ```
 
-All normal clients, including the ESP32, use the proxy at `PI_IP:1883`. The proxy buffers a complete CONNECT, calculates the route, connects to one backend, replays the buffered bytes, and then parses both split and coalesced packets. Whitelisted addresses always have score zero. An address scoring 21–50 reaches the real broker after the configured delay. At 51 or more, existing connections are closed so reconnecting clients land in the decoy.
+All normal clients, including the ESP32, use the proxy at `PI_IP:1883`. The proxy buffers a complete CONNECT, calculates the route, connects to one backend, and then parses both split and coalesced packets. Whitelisted addresses always have score zero. The default adaptive flow is `LOW 0–20 → REAL`, `MEDIUM 21–40 → delayed REAL`, `HIGH 41–50 → restricted REAL`, and `CRITICAL 51+ → DECOY`. Restricted clients cannot forward wildcard subscriptions or command publishes. Crossing CRITICAL closes existing connections so reconnecting clients land in the decoy.
 
 ### Modules for viva questions
 
 - `config.env`: the single operator-edited source for addresses, ports, credentials, thresholds, weights, delay, and IP lists.
 - `pi/config.py`: parses that file without another dependency.
 - `pi/proxy/mqtt_parse.py`: bounds-checked MQTT framing and CONNECT, CONNACK, SUBSCRIBE, and PUBLISH parsing. It retains incomplete data between reads.
-- `pi/proxy/scoring.py`: deterministic scoring state with an injectable clock, linear decay, per-signal caps, and route selection.
-- `pi/proxy/proxy.py`: owns TCP sessions, selects a backend after CONNECT, forwards bytes both ways, scores behavior, and disconnects an IP when it crosses HIGH.
-- `pi/db.py`: creates the three SQLite tables and enables WAL plus a five-second busy timeout for concurrent writers/readers.
-- `pi/decoy/decoy_publisher.py`: makes the decoy look alive and prints every message it observes. The proxy records attacker source IPs because the broker itself sees only the proxy connection.
-- `pi/dashboard/app.py`: read-only, three-second auto-refresh dashboard for current scores, events, sessions, and decoy messages.
-- `pi/analysis/analyze.py`: reconstructs action sequences, classifies behavior, prints a summary, and writes CSV.
+- `pi/proxy/scoring.py`: deterministic scoring for authentication, connection/publish rate, enumeration, wildcard, malformed packet, session, sequence, blacklist, and decoy-engagement signals.
+- `pi/proxy/proxy.py`: implements the observe → score → adapt → observe-response loop, restores decayed risk after restart, and enforces throttle/restrict/decoy actions.
+- `pi/security.py`: shared risk-level, attack-category, and behavioral-fingerprint rules.
+- `pi/db.py`: additive SQLite migrations, WAL/busy timeout, raw evidence, and persistent attacker first/last seen, attack count/types, highest/current risk, fingerprint, and bounded history.
+- `pi/decoy/decoy_publisher.py`: publishes configurable smart-lock and thermostat profiles and prints every message it observes.
+- `pi/dashboard/app.py`: three-second SOC dashboard plus JSON APIs for statistics, attackers, timelines, risk, sessions, and events.
+- `pi/analysis/analyze.py`: reconstructs action sequences and exports classified CSV; `evaluate.py` calculates reproducible observed metrics.
 - `sim/sim_esp32.py`: hardware-free door node; its observable relay state is `sim/relay_state.txt`.
 - `attacker/attack.py`: authorized four-stage demonstration. The flood plus five failed logins gives 15 + 40 = 55 with default weights, so wildcard reconnaissance and command spoofing occur after redirection.
 - `esp32/esp32_node/esp32_node.ino`: physical node with non-blocking Wi-Fi/MQTT reconnect, selectable sensors, relay control, and retained state.
@@ -62,7 +63,10 @@ Edit only `config.env` for the gateway and Python tools. Comma-separated IP list
 - `WHITELIST_IPS`: include `127.0.0.1` and the exact static `ESP32_IP`. These addresses always score zero.
 - `BLACKLIST_IPS`: gets the blacklist weight once on first sight.
 - `DECOY_FORCE_IPS`: optional demo safety switch; these addresses route directly to the decoy regardless of score. Leave it empty when demonstrating the complete score transition.
-- `MEDIUM=21`, `HIGH=51`: routing boundaries.
+- `MEDIUM=21`, `HIGH=41`, `CRITICAL=51`: throttle, restrict, and decoy boundaries.
+- All `WEIGHT_*`, rate/window/limit, decay, and delay fields keep behavioral decisions explainable and configurable.
+- `DECOY_PROFILE=auto|smart_lock|thermostat` selects the advertised fake device; `auto` uses the connecting client identifier when possible.
+- `ALERT_*` enables cooldown-controlled JSON-line logging and an optional HTTP webhook for high/critical activity.
 - `REAL_USER`, `REAL_PASS`: used by the real broker, simulator, ESP32, phone, and legitimate CLI clients.
 
 After changing credentials, rerun `pi/setup_pi.sh` to regenerate `data/real.passwd`.
@@ -92,6 +96,36 @@ bash pi/stop_all.sh
 Logs are in `logs/`, PID files and rendered broker configurations are in `run/`, and durable evidence is in `data/honeypot.db`.
 
 ## Laptop-only test
+
+### Windows Python setup
+
+On Windows PowerShell, create an isolated environment and install the project dependencies with:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pytest -q
+```
+
+If PowerShell blocks the activation script, use the virtual-environment Python directly instead of changing the machine execution policy:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Mosquitto is a separate native application and is therefore not included in `requirements.txt`. Install its Windows build and add it to `PATH`, then run the complete native stack with:
+
+```powershell
+.\pi\setup_windows.ps1
+.\pi\run_all.ps1
+# Stop later with:
+.\pi\stop_all.ps1
+```
+
+The automated `tests/smoke_test.sh` lifecycle remains Linux-oriented; on Windows use WSL/Ubuntu for that exact script. The PowerShell lifecycle preserves the same ports, logs, PID files, brokers, proxy, decoy, and dashboard.
 
 Use Ubuntu/Debian, including a Linux VM whose networking permits loopback aliases. Install base packages, clone/copy the repository, and set `PI_IP=127.0.0.1`, keep `127.0.0.1` in `WHITELIST_IPS`, set `ESP32_IP=127.0.0.1`, leave `DECOY_FORCE_IPS` empty, and ensure `127.0.0.2` is not whitelisted.
 
@@ -134,7 +168,7 @@ mosquitto_sub -h 127.0.0.1 -p 1883 -u "$REAL_USER" -P "$REAL_PASS" -t 'home/door
 .venv/bin/python pi/analysis/analyze.py
 ```
 
-Shell variables are available after `set -a; source config.env; set +a`. Open `http://127.0.0.1:5000`. The simulator should continue printing motion, its relay file should stay `LOCKED`, the attacker should show four completed stages, and the analyzer should show `allow -> throttle -> decoy` (very fast runs may skip a persisted throttle event) plus the three attack classifications.
+Shell variables are available after `set -a; source config.env; set +a`. Open `http://127.0.0.1:5000`. The simulator should continue printing motion, its relay file should stay `LOCKED`, and the attacker should show four completed stages. Depending on timing, the timeline shows `allow → throttle → restrict → decoy` and the relevant attack categories.
 
 ## Tests and analysis
 
@@ -144,7 +178,80 @@ bash tests/smoke_test.sh
 .venv/bin/python pi/analysis/analyze.py --output data/analysis.csv
 ```
 
-Unit tests cover signal weights, cap, thresholds, decay, whitelist, forced routes, default attack score, malformed packets, multi-byte lengths, packets split across reads, and several packets in one read. The smoke test deliberately refuses to run when the laptop configuration is unsafe or inconsistent.
+Unit tests cover all scoring signals, four adaptive levels, caps, decay, whitelist, forced routes, persistence, migrations, classification, fingerprints, alert cooldown, profiles, evaluation, APIs, dashboard rendering, malformed packets, and MQTT packet framing. The smoke test deliberately refuses to run when the laptop configuration is unsafe or inconsistent.
+
+## SOC dashboard and APIs
+
+The dashboard at `http://PI_IP:5000` shows total attackers, high/critical count, sessions, decoy hits, risk and attack distributions, persistent fingerprints, and a live event timeline. Per-IP details include connection, authentication, enumeration, suspicious activity, score/action changes, routes, sessions, decoy payloads, and attackers with the same fingerprint.
+
+Read-only endpoints:
+
+```text
+GET /api/stats
+GET /api/attackers
+GET /api/events?limit=100
+GET /api/sessions?limit=100
+GET /api/attacker/<ip>
+GET /api/risk/<ip>
+```
+
+## Attack categories and decision flow
+
+| Category | Primary evidence |
+|---|---|
+| Reconnaissance | wildcard subscriptions, repeated short sessions, blacklist sighting |
+| Brute Force | failed authentication CONNACK 4/5 |
+| MQTT Enumeration | unique topic filters over the configured limit |
+| Unauthorized/Suspicious Publish | command-topic or decoy publishes |
+| Command/Protocol Abuse | malformed packets, suspicious payloads, wildcard-to-command sequence |
+| Flooding/DoS | connection or publish frequency over rolling limits |
+
+Each scored event records the signal, awarded points, resulting score/action, category, detail, and response latency. High-risk clients remain on the authenticated real broker but wildcard and command packets are withheld. Critical clients are disconnected and their next session receives a selected decoy profile. Decoy interaction itself becomes a feedback signal.
+
+## Docker Compose (optional)
+
+Docker does not replace native execution. It provides isolated real/decoy brokers, proxy, dashboard, fake-device publisher, and simulator:
+
+```bash
+docker compose up --build
+docker compose down
+```
+
+Only proxy port 1883 and dashboard port 5000 are published. Named volumes retain SQLite/log/simulator state. Environment overrides supply internal broker hostnames while `config.env` remains the shared configuration.
+
+## Experiments and reproducible evaluation
+
+Run an attack/benign workload, then capture only measurements actually observed:
+
+```bash
+python pi/analysis/evaluate.py --database data/honeypot.db --output data/evaluation.json
+python pi/analysis/measure_resources.py --pid <proxy-pid> --duration 60 --output data/proxy-resources.csv
+```
+
+For detection rate and false positives, supply a CSV with `ip,label` where label is `malicious` or `benign`:
+
+```bash
+python pi/analysis/evaluate.py --ground-truth data/ground_truth.csv
+```
+
+The report covers detection/false-positive rates when labels exist, first high/critical response latency, event throughput, database size/activity, sessions, and decoy engagement. CPU time and RAM are sampled separately on Windows or Linux without third-party packages. Missing measurements are reported as `null`; the scripts never invent results.
+
+## Example workflow
+
+1. Edit `config.env`, run the platform setup/start script, and open the SOC dashboard.
+2. Start `sim/sim_esp32.py` and verify its whitelisted score remains zero.
+3. Run the authorized `attacker/attack.py`; watch the per-IP timeline and adaptive actions.
+4. Inspect `/api/attacker/<ip>`, `logs/alerts.log`, and the selected decoy profile/session.
+5. Run `analyze.py`, `evaluate.py`, and resource sampling; retain the resulting CSV/JSON as experiment evidence.
+
+## Limitations
+
+- This is a teaching prototype, not a TLS terminator, production IDS, or substitute for network segmentation.
+- Risk is IP-based; NAT can group clients and IPv6 privacy addresses can split one actor.
+- Fingerprints are explainable behavioral similarities, not identity attribution.
+- In-memory rolling windows reset on restart; current decayed score and historical evidence persist in SQLite.
+- MQTT 3.1.1 is deeply inspected. Other protocol levels are forwarded and logged as protocol abuse without full semantic parsing.
+- Webhook delivery is best effort and intentionally non-blocking; consult the local alert log as the audit source.
 
 ## Project tree
 

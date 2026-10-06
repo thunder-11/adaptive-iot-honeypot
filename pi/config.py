@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Mapping
 
@@ -10,7 +11,7 @@ CONFIG_PATH = ROOT / "config.env"
 
 
 def load_config(path: Path = CONFIG_PATH) -> dict[str, str]:
-    """Read KEY=VALUE pairs, ignoring comments and blank lines."""
+    """Read KEY=VALUE pairs and allow Docker/CI environment overrides."""
     values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -18,6 +19,9 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, str]:
             continue
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip().strip('"').strip("'")
+    for key in list(values):
+        if key in os.environ:
+            values[key] = os.environ[key]
     return values
 
 
@@ -31,4 +35,8 @@ def number(config: Mapping[str, str], key: str) -> float:
 
 def addresses(config: Mapping[str, str], key: str) -> set[str]:
     return {item.strip() for item in config.get(key, "").split(",") if item.strip()}
+
+
+def boolean(config: Mapping[str, str], key: str, default: bool = False) -> bool:
+    return config.get(key, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 

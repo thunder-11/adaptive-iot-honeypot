@@ -12,7 +12,7 @@ sudo apt-get update
 sudo apt-get install -y mosquitto mosquitto-clients python3-venv
 python3 -m venv "$ROOT/.venv"
 "$ROOT/.venv/bin/python" -m pip install --upgrade pip
-"$ROOT/.venv/bin/pip" install paho-mqtt flask pytest
+"$ROOT/.venv/bin/pip" install -r "$ROOT/requirements.txt"
 sudo systemctl disable --now mosquitto 2>/dev/null || true
 
 mkdir -p "$ROOT/data" "$ROOT/logs" "$ROOT/run"

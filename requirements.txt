@@ -1,0 +1,6 @@
+# Python dependencies shared by Windows laptop simulation/testing and the Pi.
+# Python 3.11 or newer is recommended.
+paho-mqtt>=2.1,<3
+Flask>=3.0,<4
+pytest>=8.0,<9
+

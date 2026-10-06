@@ -46,7 +46,7 @@ Follow this checklist in order. Replace example network values with the values a
    bash pi/run_all.sh
    ```
 
-   Expected: pytest ends with `13 passed`; startup prints the proxy and dashboard addresses. Check processes with:
+   Expected: pytest passes the complete suite; startup prints the proxy and dashboard addresses. Check processes with:
 
    ```bash
    tail -n 20 logs/real-broker.log logs/decoy-broker.log logs/proxy.log logs/dashboard.log
@@ -168,9 +168,9 @@ Subscribe to `home/door/#`. Publish `lock` or `unlock` to `home/door/lock`. The 
 
 3. **Open the dashboard:** show the ESP32/phone action as `allow`. Say, “SQLite keeps the evidence while WAL mode lets the proxy and dashboard work concurrently.”
 
-4. **Run attack stages 1–2:** execute the laptop command. Point out connection rate, failed CONNACK 4/5 events, `throttle`, then score 51+. Say, “Risk is behavior-based and decays over time; failed-auth contribution is capped to resist unbounded scores.”
+4. **Run attack stages 1–2:** execute the laptop command. Point out connection rate, failed CONNACK 4/5 events, `throttle`, `restrict`, then score 51+. Say, “Risk is behavior-based, explainable, persistent, and decays over time; capped contributions resist unbounded scores.”
 
-5. **Explain the forced reconnect:** show the real session ending and a decoy session starting. Say, “Crossing HIGH closes open attacker sockets, so its reconnect is routed using the new score.”
+5. **Explain the forced reconnect:** show the real session ending and a decoy session starting. Say, “HIGH restricts dangerous packets; crossing CRITICAL closes open attacker sockets, so its reconnect is routed using the new score.”
 
 6. **Run/show stages 3–4:** the same script continues automatically. State clearly: **“The wildcard subscription and fake unlock—the attack's stages 3 and 4—are happening inside the decoy after redirection.”**
 

@@ -1,0 +1,18 @@
+{
+  "smart_lock": {
+    "device_name": "SecureDoor SL-200",
+    "firmware": "2.4.1",
+    "topics": {
+      "home/door/motion": ["0", "0", "1"],
+      "home/door/status": ["{\"locked\":true,\"battery\":87}"]
+    }
+  },
+  "thermostat": {
+    "device_name": "ComfortTemp T9",
+    "firmware": "1.8.3",
+    "topics": {
+      "home/thermostat/temperature": ["21.4", "21.6", "21.8"],
+      "home/thermostat/status": ["{\"mode\":\"auto\",\"target_c\":22}"]
+    }
+  }
+}

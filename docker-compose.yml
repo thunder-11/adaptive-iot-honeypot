@@ -1,0 +1,67 @@
+services:
+  real-broker:
+    image: eclipse-mosquitto:2
+    env_file: config.env
+    volumes:
+      - ./docker/mosquitto/real.conf:/mosquitto/config/real.conf:ro
+    command: ["/bin/sh", "-c", "mosquitto_passwd -b -c /tmp/real.passwd \"$$REAL_USER\" \"$$REAL_PASS\" && exec mosquitto -c /mosquitto/config/real.conf"]
+    networks: [honeynet]
+  decoy-broker:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./docker/mosquitto/decoy.conf:/mosquitto/config/decoy.conf:ro
+    command: ["mosquitto", "-c", "/mosquitto/config/decoy.conf"]
+    networks: [honeynet]
+  proxy:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: config.env
+    environment:
+      REAL_HOST: real-broker
+      DECOY_HOST: decoy-broker
+      WHITELIST_IPS: 127.0.0.1,172.30.0.10
+    command: ["python", "pi/proxy/proxy.py"]
+    ports: ["1883:1883"]
+    volumes: ["honeypot-data:/app/data", "honeypot-logs:/app/logs"]
+    depends_on: [real-broker, decoy-broker]
+    networks: [honeynet]
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: config.env
+    command: ["python", "pi/dashboard/app.py"]
+    ports: ["5000:5000"]
+    volumes: ["honeypot-data:/app/data"]
+    depends_on: [proxy]
+    networks: [honeynet]
+  decoy-publisher:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: config.env
+    environment: {DECOY_HOST: decoy-broker}
+    command: ["python", "pi/decoy/decoy_publisher.py"]
+    depends_on: [decoy-broker]
+    networks: [honeynet]
+  simulator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: config.env
+    environment: {PI_IP: proxy}
+    command: ["python", "sim/sim_esp32.py"]
+    volumes: ["sim-state:/app/sim"]
+    depends_on: [proxy]
+    networks:
+      honeynet:
+        ipv4_address: 172.30.0.10
+volumes:
+  honeypot-data:
+  honeypot-logs:
+  sim-state:
+networks:
+  honeynet:
+    ipam:
+      config: [{subnet: 172.30.0.0/24}]

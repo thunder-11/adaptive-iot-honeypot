@@ -24,6 +24,17 @@ def test_linear_decay_and_thresholds():
     assert scorer.action("bad", now=15) == "allow"
 
 
+def test_four_adaptive_actions():
+    scorer = RiskScorer(config(decay_per_second=0, medium=21, high=41, critical=51), clock=lambda: 1.0)
+    assert scorer.action("bad") == "allow"
+    scorer._add("bad", 21)
+    assert scorer.action("bad") == "throttle"
+    scorer._add("bad", 20)
+    assert scorer.action("bad") == "restrict"
+    scorer._add("bad", 10)
+    assert scorer.action("bad") == "decoy"
+
+
 def test_connection_rate_awarded_once_per_window():
     scorer = RiskScorer(config(connection_limit=2, connection_window=10), clock=lambda: 0.1)
     assert scorer.record_connection("bad", 0.1)[1] is False
@@ -62,4 +73,32 @@ def test_default_attack_flood_and_auth_reaches_high():
 def test_forced_decoy_ignores_score():
     scorer = RiskScorer(config(force_decoy=frozenset({"demo"})), clock=lambda: 1.0)
     assert scorer.action("demo") == "decoy"
+
+
+def test_enumeration_publish_rate_and_sequences():
+    scorer = RiskScorer(config(
+        decay_per_second=0, topic_enumeration_limit=2, publish_limit=2,
+        topic_enumeration_weight=12, publish_rate_weight=15,
+        command_sequence_weight=15,
+    ), clock=lambda: 1.0)
+    assert scorer.record_topic("bad", "a")[1] is False
+    assert scorer.record_topic("bad", "b")[1] is False
+    assert scorer.record_topic("bad", "c") == (12, True)
+    assert scorer.record_publish("bad")[1] is False
+    assert scorer.record_publish("bad")[1] is False
+    assert scorer.record_publish("bad") == (27, True)
+    scorer.record_wildcard("bad")
+    assert scorer.record_command_sequence("bad")[1] is True
+    assert scorer.record_command_sequence("bad")[1] is False
+
+
+def test_malformed_short_session_decoy_feedback_and_seed():
+    scorer = RiskScorer(config(decay_per_second=0, short_session_cap=6), clock=lambda: 1.0)
+    assert scorer.record_malformed("bad") == 12
+    assert [scorer.record_short_session("bad")[1] for _ in range(3)] == [3, 3, 0]
+    assert scorer.record_decoy_engagement("bad")[1] is True
+    assert scorer.record_decoy_engagement("bad")[1] is False
+    restored = RiskScorer(config(decay_per_second=0), clock=lambda: 2.0)
+    restored.seed("bad", scorer.score("bad"))
+    assert restored.score("bad") == scorer.score("bad")
 
