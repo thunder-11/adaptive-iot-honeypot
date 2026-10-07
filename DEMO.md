@@ -168,6 +168,8 @@ Subscribe to `home/door/#`. Publish `lock` or `unlock` to `home/door/lock`. The 
 
 3. **Open the dashboard:** show the ESP32/phone action as `allow`. Say, “SQLite keeps the evidence while WAL mode lets the proxy and dashboard work concurrently.”
 
+   Point out the p50/p95 first-response cards; they measure elapsed time from first observation to each source's first `restrict` or `decoy` action using the same calculation as the evaluation report.
+
    If two source IPs use matching MQTT client-ID patterns and CONNECT characteristics, open `/api/fingerprint/<label>` to show the first-seen-ordered “likely same actor” correlation.
 
 4. **Run attack stages 1–2:** execute the laptop command. Point out connection rate, failed CONNACK 4/5 events, `throttle`, `restrict`, then score 51+. Say, “Risk is behavior-based, explainable, checkpointed across proxy restarts, and decays over time; capped contributions resist unbounded scores.”

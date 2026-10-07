@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from pi import db
+from pi.analysis.evaluate import first_high_critical_latencies, percentile
 from pi.config import addresses, integer, load_config, number
 from pi.security import action_for_score, risk_level, split_categories
 
@@ -65,6 +66,12 @@ def stats_payload() -> dict[str, object]:
         attack_distribution.update(split_categories(str(row["attack_types"])))
     session_count = query("SELECT COUNT(*) AS count FROM sessions")[0]["count"]
     decoy_hits = query("SELECT COUNT(*) AS count FROM decoy_messages")[0]["count"]
+    response_events = query(
+        "SELECT time, ip, action FROM events "
+        "WHERE action IN ('restrict', 'decoy') ORDER BY time"
+    )
+    first_seen = {str(row["ip"]): float(row["first_seen"]) for row in attackers}
+    response_latencies = first_high_critical_latencies(response_events, first_seen)
     return {
         "total_attackers": len(attackers),
         "high_critical": sum(1 for row in attackers if row["risk_level"] in {"HIGH", "CRITICAL"}),
@@ -73,6 +80,11 @@ def stats_payload() -> dict[str, object]:
         "risk_distribution": {name: risk_distribution.get(name, 0)
                               for name in ("LOW", "MEDIUM", "HIGH", "CRITICAL")},
         "attack_distribution": dict(attack_distribution),
+        "first_high_critical_latency_ms": {
+            "p50": percentile(response_latencies, 0.50),
+            "p95": percentile(response_latencies, 0.95),
+            "samples": len(response_latencies),
+        },
         "generated_at": time.time(),
     }
 

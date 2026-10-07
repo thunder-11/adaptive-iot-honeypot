@@ -11,7 +11,8 @@ def test_dashboard_pages_and_json_apis():
     for candidate in (path, Path(str(path) + "-wal"), Path(str(path) + "-shm")):
         candidate.unlink(missing_ok=True)
     now = time.time()
-    db.add_event(now, "10.0.0.9", "decoy", 60, "wildcard subscribe: #", path,
+    db.add_event(now, "10.0.0.9", "allow", 0, "connection opened", path)
+    db.add_event(now + 1, "10.0.0.9", "decoy", 60, "wildcard subscribe: #", path,
                  category="Reconnaissance", signal="wildcard_subscription", points=25)
     db.start_session("10.0.0.9", "decoy", now, path, profile="smart_lock")
     db.add_decoy_message(now + 1, "10.0.0.9", "home/door/lock", "unlock", path)
@@ -31,10 +32,14 @@ def test_dashboard_pages_and_json_apis():
     assert stats["sessions"] == 1
     assert stats["decoy_hits"] == 1
     assert stats["high_critical"] == 1
+    assert stats["first_high_critical_latency_ms"] == {
+        "p50": 1000.0, "p95": 1000.0, "samples": 1,
+    }
+    assert b"First response p95" in client.get("/").data
     assert client.get("/api/events").status_code == 200
     assert client.get("/api/sessions").status_code == 200
     attacker = client.get("/api/attacker/10.0.0.9").get_json()
-    assert attacker["timeline"][0]["signal"] == "wildcard_subscription"
+    assert attacker["timeline"][1]["signal"] == "wildcard_subscription"
     assert attacker["decoy_messages"][0]["payload"] == "unlock"
     assert client.get("/api/risk/10.0.0.9").get_json()["highest_risk"] == 60
     matches = client.get(f"/api/fingerprint/{attacker['fingerprint_label']}").get_json()

@@ -8,6 +8,7 @@ import csv
 import json
 import sqlite3
 from pathlib import Path
+from typing import Iterable, Mapping
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB = ROOT / "data" / "honeypot.db"
@@ -27,6 +28,32 @@ def safe_rate(numerator: int, denominator: int) -> float | None:
     return round(numerator / denominator, 4) if denominator else None
 
 
+def first_high_critical_latencies(
+    events: Iterable[Mapping[str, object]], first_seen: Mapping[str, float]
+) -> list[float]:
+    """Milliseconds from first observation to each IP's first restrict/decoy action."""
+    latencies: list[float] = []
+    responded: set[str] = set()
+    for row in events:
+        ip = str(row["ip"])
+        if ip in responded or ip not in first_seen or row["action"] not in {"restrict", "decoy"}:
+            continue
+        latencies.append((float(row["time"]) - first_seen[ip]) * 1000)
+        responded.add(ip)
+    return latencies
+
+
+def percentile(values: Iterable[float], quantile: float) -> float | None:
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    position = (len(ordered) - 1) * quantile
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = position - lower
+    return round(ordered[lower] + (ordered[upper] - ordered[lower]) * fraction, 3)
+
+
 def evaluate(database: Path, truth_path: Path | None = None) -> dict[str, object]:
     connection = sqlite3.connect(database)
     connection.row_factory = sqlite3.Row
@@ -41,13 +68,7 @@ def evaluate(database: Path, truth_path: Path | None = None) -> dict[str, object
     fp = sum(predicted.get(ip, False) and not malicious for ip, malicious in truth.items())
     tn = sum(not predicted.get(ip, False) and not malicious for ip, malicious in truth.items())
     first_seen = {row["ip"]: row["first_seen"] for row in attackers}
-    response_latencies = [
-        (row["time"] - first_seen[row["ip"]]) * 1000
-        for row in events
-        if row["ip"] in first_seen and row["action"] in {"restrict", "decoy"}
-        and not any(previous["ip"] == row["ip"] and previous["time"] < row["time"]
-                    and previous["action"] in {"restrict", "decoy"} for previous in events)
-    ]
+    response_latencies = first_high_critical_latencies(events, first_seen)
     duration = (events[-1]["time"] - events[0]["time"]) if len(events) > 1 else 0.0
     result = {
         "ground_truth_rows": len(truth),
@@ -57,6 +78,8 @@ def evaluate(database: Path, truth_path: Path | None = None) -> dict[str, object
                       "false_positive": fp, "true_negative": tn},
         "mean_response_latency_ms": round(sum(response_latencies) / len(response_latencies), 3)
         if response_latencies else None,
+        "p50_response_latency_ms": percentile(response_latencies, 0.50),
+        "p95_response_latency_ms": percentile(response_latencies, 0.95),
         "throughput_events_per_second": round(len(events) / duration, 3) if duration > 0 else None,
         "database": {"bytes": database.stat().st_size, "events": len(events),
                      "attackers": len(attackers), "sessions": len(sessions)},

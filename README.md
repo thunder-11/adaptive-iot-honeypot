@@ -179,7 +179,7 @@ The multi-page dashboard at `http://PI_IP:5000` has a persistent SOC navigation 
 
 Dashboard pages:
 
-- `/` — live total attackers, high/critical count, sessions, decoy hits, risk distribution, and attack distribution.
+- `/` — live total attackers, high/critical count, sessions, decoy hits, p50/p95 first high-or-critical response latency, risk distribution, and attack distribution.
 - `/attackers` — sortable attacker inventory with current risk/action, fingerprints, attack types, and observation times.
 - `/attacker/<ip>` — per-IP event timeline, sessions, decoy messages, and attackers sharing the same fingerprint.
 - `/events` — live scoring-event timeline with client-side risk and action filters.
@@ -236,7 +236,7 @@ For detection rate and false positives, supply a CSV with `ip,label` where label
 python pi/analysis/evaluate.py --ground-truth data/ground_truth.csv
 ```
 
-The report covers detection/false-positive rates when labels exist, first high/critical response latency, event throughput, database size/activity, sessions, and decoy engagement. CPU time and RAM are sampled separately on Windows or Linux without third-party packages. Missing measurements are reported as `null`; the scripts never invent results.
+The report covers detection/false-positive rates when labels exist, mean/p50/p95 first high-or-critical response latency, event throughput, database size/activity, sessions, and decoy engagement. The dashboard `/api/stats` payload uses the same latency calculation under `first_high_critical_latency_ms`. CPU time and RAM are sampled separately on Windows or Linux without third-party packages. Missing measurements are reported as `null`; the scripts never invent results.
 
 ## Example workflow
 

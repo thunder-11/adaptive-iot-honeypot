@@ -20,3 +20,5 @@ def test_evaluation_reports_observed_data_without_fabrication():
     assert result["false_positive_rate"] == 0.0
     assert result["database"]["events"] == 2
     assert result["decoy_engagement"]["messages"] == 1
+    assert result["p50_response_latency_ms"] == 0
+    assert result["p95_response_latency_ms"] == 0

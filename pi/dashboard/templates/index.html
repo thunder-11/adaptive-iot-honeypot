@@ -10,6 +10,8 @@
   <div class="stat"><span class="eyebrow">High / critical</span><strong id="high-critical">{{ stats.high_critical }}</strong></div>
   <div class="stat"><span class="eyebrow">Sessions</span><strong id="session-count">{{ stats.sessions }}</strong></div>
   <div class="stat"><span class="eyebrow">Decoy hits</span><strong id="decoy-hits">{{ stats.decoy_hits }}</strong></div>
+  <div class="stat"><span class="eyebrow">First response p50</span><strong id="latency-p50">{{ '%.1f ms'|format(stats.first_high_critical_latency_ms.p50) if stats.first_high_critical_latency_ms.p50 is not none else '—' }}</strong></div>
+  <div class="stat"><span class="eyebrow">First response p95</span><strong id="latency-p95">{{ '%.1f ms'|format(stats.first_high_critical_latency_ms.p95) if stats.first_high_critical_latency_ms.p95 is not none else '—' }}</strong></div>
 </div>
 <div class="grid">
   <section class="panel"><h2>Risk distribution</h2><div class="distribution" id="risk-distribution">
@@ -48,7 +50,10 @@
         if (!response.ok) return;
         const stats = await response.json();
         setText("total-attackers", stats.total_attackers); setText("high-critical", stats.high_critical);
-        setText("session-count", stats.sessions); setText("decoy-hits", stats.decoy_hits); setText("generated-at", stats.generated_at.toFixed(3));
+        setText("session-count", stats.sessions); setText("decoy-hits", stats.decoy_hits);
+        setText("latency-p50", stats.first_high_critical_latency_ms.p50 === null ? "—" : `${stats.first_high_critical_latency_ms.p50.toFixed(1)} ms`);
+        setText("latency-p95", stats.first_high_critical_latency_ms.p95 === null ? "—" : `${stats.first_high_critical_latency_ms.p95.toFixed(1)} ms`);
+        setText("generated-at", stats.generated_at.toFixed(3));
         renderDistribution(document.getElementById("risk-distribution"), ["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((name) => [name, stats.risk_distribution[name]]), true);
         renderDistribution(document.getElementById("attack-distribution"), Object.entries(stats.attack_distribution));
       } catch (_) { /* retain the last good snapshot */ }
