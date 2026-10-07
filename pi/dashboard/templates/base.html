@@ -47,6 +47,17 @@
     .nav-links a.active { border-left-color: var(--accent-strong); background: var(--accent-soft); color: var(--accent); }
     .sidebar-foot { margin-top: auto; }
     .theme-toggle { width: 100%; padding: .55rem .65rem; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; font: 600 .78rem ui-monospace, monospace; }
+    .sidebar-actions { display: grid; gap: .4rem; }
+    .button { display: inline-flex; align-items: center; justify-content: center; padding: .48rem .7rem; border: 1px solid var(--line-strong); background: var(--surface-raised); color: var(--text); cursor: pointer; text-decoration: none; font: 600 .76rem ui-monospace, monospace; }
+    .button:hover { color: var(--text-strong); border-color: var(--accent); }
+    .button.danger { color: var(--critical); }
+    .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+    .toast-stack { position: fixed; z-index: 20; right: 1rem; top: 1rem; display: grid; gap: .5rem; width: min(26rem, calc(100vw - 2rem)); }
+    .toast { padding: .8rem .9rem; border: 1px solid var(--critical); background: var(--surface); box-shadow: 0 5px 20px var(--shadow); font: .78rem ui-monospace, monospace; }
+    .toast strong { display: block; margin-bottom: .25rem; color: var(--critical); }
+    .device-state { display: flex; align-items: center; gap: .8rem; }
+    .led { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #475569; box-shadow: 0 0 0 3px var(--line); }
+    .led.on { background: #22c55e; box-shadow: 0 0 12px #22c55e; }
     .main { min-width: 0; padding: 1.35rem 1.55rem 2rem; }
     .page-head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
     h1, h2, h3 { margin-top: 0; color: var(--text-strong); }
@@ -109,10 +120,14 @@
         <a href="{{ url_for('events_page') }}" {% if request.endpoint == 'events_page' %}class="active" aria-current="page"{% endif %}>Events</a>
         <a href="{{ url_for('sessions_page') }}" {% if request.endpoint == 'sessions_page' %}class="active" aria-current="page"{% endif %}>Sessions</a>
       </nav>
-      <div class="sidebar-foot"><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark theme">Theme: <span id="theme-label">dark</span></button></div>
+      <div class="sidebar-foot sidebar-actions">
+        <button class="theme-toggle" id="desktop-alerts" type="button">Desktop alerts: enable</button>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark theme">Theme: <span id="theme-label">dark</span></button>
+      </div>
     </aside>
     <main class="main">{% block content %}{% endblock %}</main>
   </div>
+  <div class="toast-stack" id="toast-stack" aria-live="assertive"></div>
   <script>
     (() => {
       const root = document.documentElement, label = document.getElementById("theme-label"), button = document.getElementById("theme-toggle");
@@ -140,6 +155,35 @@
           rows.forEach((row) => body.appendChild(row));
         });
       });
+    })();
+    (() => {
+      const button = document.getElementById("desktop-alerts"), stack = document.getElementById("toast-stack");
+      let cursor = null;
+      const syncButton = () => {
+        button.textContent = !('Notification' in window) ? "Desktop alerts: unavailable" :
+          Notification.permission === "granted" ? "Desktop alerts: on" : "Desktop alerts: enable";
+      };
+      button.addEventListener("click", async () => {
+        if ('Notification' in window && Notification.permission !== "granted") await Notification.requestPermission();
+        syncButton();
+      });
+      const showAlert = (event) => {
+        const message = `${event.ip} · score ${Number(event.score).toFixed(1)} · ${event.detail}`;
+        const toast = document.createElement("div"); toast.className = "toast";
+        const title = document.createElement("strong"); title.textContent = `Suspicious activity: ${String(event.action).toUpperCase()}`;
+        const body = document.createElement("span"); body.textContent = message; toast.append(title, body); stack.appendChild(toast);
+        setTimeout(() => toast.remove(), 10000);
+        if ('Notification' in window && Notification.permission === "granted") new Notification(title.textContent, { body: message, tag: `honeypot-${event.rowid}` });
+      };
+      const poll = async () => {
+        try {
+          const suffix = cursor === null ? "" : `?after=${cursor}`;
+          const response = await fetch(`{{ url_for('api_alerts') }}${suffix}`, { cache: "no-store" });
+          if (!response.ok) return;
+          const data = await response.json(); cursor = data.cursor; data.events.forEach(showAlert);
+        } catch (_) { /* keep the last cursor and retry */ }
+      };
+      syncButton(); poll(); setInterval(poll, 3000);
     })();
   </script>
   {% block scripts %}{% endblock %}

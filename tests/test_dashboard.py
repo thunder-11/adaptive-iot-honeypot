@@ -16,6 +16,7 @@ def test_dashboard_pages_and_json_apis():
                  category="Reconnaissance", signal="wildcard_subscription", points=25)
     db.start_session("10.0.0.9", "decoy", now, path, profile="smart_lock")
     db.add_decoy_message(now + 1, "10.0.0.9", "home/door/lock", "unlock", path)
+    db.update_device_state(now + 2, "127.0.0.1", True, True, "test-esp32", path)
     app.config.update(TESTING=True, DB_PATH=str(path))
     client = app.test_client()
     pages = ("/", "/attackers", "/events", "/sessions", "/attacker/10.0.0.9")
@@ -35,8 +36,17 @@ def test_dashboard_pages_and_json_apis():
     assert stats["first_high_critical_latency_ms"] == {
         "p50": 1000.0, "p95": 1000.0, "samples": 1,
     }
+    assert stats["device_state"]["locked"] == 1
     assert b"First response p95" in client.get("/").data
     assert client.get("/api/events").status_code == 200
+    alert_start = client.get("/api/alerts").get_json()
+    assert alert_start["events"] == []
+    alerts = client.get("/api/alerts?after=0").get_json()
+    assert alerts["events"][0]["action"] == "decoy"
+    exported = client.get("/api/events/export.csv")
+    assert exported.status_code == 200
+    assert "honeypot-attack-events.csv" in exported.headers["Content-Disposition"]
+    assert b"wildcard_subscription" in exported.data
     assert client.get("/api/sessions").status_code == 200
     attacker = client.get("/api/attacker/10.0.0.9").get_json()
     assert attacker["timeline"][1]["signal"] == "wildcard_subscription"
@@ -44,3 +54,11 @@ def test_dashboard_pages_and_json_apis():
     assert client.get("/api/risk/10.0.0.9").get_json()["highest_risk"] == 60
     matches = client.get(f"/api/fingerprint/{attacker['fingerprint_label']}").get_json()
     assert [row["ip"] for row in matches] == ["10.0.0.9"]
+    assert client.post("/api/logs/clear", json={}).status_code == 400
+    assert client.post("/api/logs/clear", json={"confirm": "clear"}).status_code == 200
+    assert client.get("/api/events").get_json() == []
+    assert client.get("/api/stats").get_json()["device_state"]["source"] == "test-esp32"
+    db.add_event(now + 3, "10.0.0.10", "restrict", 45, "new alert", path,
+                 category="Authentication Attack", signal="failed_auth", points=8)
+    after_clear = client.get(f"/api/alerts?after={alert_start['cursor']}").get_json()
+    assert [event["detail"] for event in after_clear["events"]] == ["new alert"]

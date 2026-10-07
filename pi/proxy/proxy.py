@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import signal
 import ssl
@@ -33,10 +34,12 @@ from pi.proxy.mqtt_parse import (
 )
 from pi.proxy.scoring import RiskScorer, ScoreConfig
 from pi.security import category_for_signal
+from pi.thingspeak import ThingSpeakClient
 
 LOGGER = logging.getLogger("mqtt-proxy")
 MAX_BUFFER = 1024 * 1024
 COMMAND_TOPICS = {"home/door/lock"}
+ACTION_CODES = {"allow": 0, "throttle": 1, "restrict": 2, "decoy": 3}
 
 
 def tls_server_context(config: dict[str, str]) -> ssl.SSLContext | None:
@@ -92,6 +95,7 @@ class Proxy:
         self.config = config
         self.scorer = build_scorer(config)
         self.alerts = AlertManager(config, ROOT)
+        self.thingspeak = ThingSpeakClient(config)
         self.connections: dict[str, set[asyncio.StreamWriter]] = defaultdict(set)
         self.server: asyncio.Server | None = None
         self._restore_scores()
@@ -131,7 +135,40 @@ class Proxy:
                     ip, score, action, signal or "-", detail)
         self.alerts.emit({"ip": ip, "score": round(score, 2), "action": action,
                           "category": category, "signal": signal, "detail": detail})
+        if category or action != "allow":
+            self.thingspeak.update(
+                {"field4": round(score, 2), "field5": ACTION_CODES.get(action, 0),
+                 "field6": points},
+                status=f"{action}: {detail[:180]}",
+            )
         return score
+
+    def record_device_telemetry(self, ip: str, topic: str, payload: str) -> None:
+        """Record telemetry only from a whitelisted client on the real route."""
+        if topic == "home/door/motion":
+            try:
+                motion = float(payload)
+            except ValueError:
+                return
+            self.thingspeak.update({"field1": motion}, status=f"motion={payload}")
+        elif topic == "home/door/status":
+            try:
+                status = json.loads(payload)
+                locked_value = status["locked"]
+                led_value = status.get("led_on", locked_value)
+                if not isinstance(locked_value, (bool, int)) or not isinstance(led_value, (bool, int)):
+                    raise ValueError("locked and led_on must be booleans")
+                locked = bool(locked_value)
+                led_on = bool(led_value)
+                source = str(status.get("source", "device"))
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                LOGGER.warning("ignored invalid device status from %s: %s", ip, payload[:200])
+                return
+            db.update_device_state(time.time(), ip, locked, led_on, source)
+            self.thingspeak.update(
+                {"field2": int(locked), "field3": int(led_on)},
+                status=f"real device {'LOCKED' if locked else 'UNLOCKED'}; LED={'ON' if led_on else 'OFF'}",
+            )
 
     async def disconnect_ip_if_critical(self, ip: str) -> None:
         if self.scorer.action(ip) != "decoy" or ip in self.scorer.config.force_decoy:
@@ -310,6 +347,8 @@ class Proxy:
         elif kind == 3:
             published = parse_publish(packet)
             payload = published.payload.decode("utf-8", errors="replace")
+            if backend == "real" and ip in self.scorer.config.whitelist:
+                self.record_device_telemetry(ip, published.topic, payload)
             _, rate_awarded = self.scorer.record_publish(ip)
             if rate_awarded:
                 self.log_event(ip, "publish frequency exceeded rolling limit",

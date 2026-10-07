@@ -99,6 +99,170 @@ bash pi/stop_all.sh
 
 Logs are in `logs/`, PID files and rendered broker configurations are in `run/`, and durable evidence is in `data/honeypot.db`.
 
+## Numbered demo runbook: where each command runs
+
+Recommended demo layout:
+
+- **Raspberry Pi:** runs both MQTT brokers, inspection proxy, dashboard, database, alerts, and ThingSpeak uploader.
+- **ESP32:** runs the flashed smart-lock sketch and controls the physical relay/LED.
+- **Windows laptop:** flashes the ESP32, opens the dashboard and ThingSpeak, and acts as the separate attacker machine.
+
+### 1. Windows laptop — flash the ESP32 once
+
+Before opening Arduino IDE, create the local credentials file in Windows PowerShell:
+
+```powershell
+Set-Location "E:\Ali\adaptive-iot-honeypot"
+Copy-Item .\esp32\esp32_node\secrets.h.example .\esp32\esp32_node\secrets.h
+notepad .\esp32\esp32_node\secrets.h
+```
+
+Enter the Wi-Fi name/password and MQTT password in `secrets.h`. The real file is ignored by Git so these credentials are not pushed. Then open `esp32/esp32_node/esp32_node.ino` in Arduino IDE. Set the Pi IP, MQTT username, ESP32 static IP, gateway, and subnet in the sketch. Select the actual ESP32 model under **Tools → Board**, select its COM port, and click **Upload**. Open Serial Monitor at `115200` baud after flashing. The upload itself is performed in Arduino IDE.
+
+### 2. Raspberry Pi, Terminal 1 — configure the project
+
+```bash
+cd ~/adaptive-iot-honeypot
+nano config.env
+```
+
+Set `PI_IP`, `ESP32_IP`, `REAL_USER`, `REAL_PASS`, `WHITELIST_IPS`, and the ThingSpeak settings. The laptop's Wi-Fi IP must **not** be in `WHITELIST_IPS` when the laptop is used as the attacker. Save Nano with `Ctrl+O`, Enter, then exit with `Ctrl+X`.
+
+### 3. Raspberry Pi, Terminal 1 — first-time installation
+
+Run this once, and rerun it whenever `REAL_USER` or `REAL_PASS` changes:
+
+```bash
+cd ~/adaptive-iot-honeypot
+bash pi/setup_pi.sh
+```
+
+### 4. Raspberry Pi, Terminal 1 — start the honeypot stack
+
+```bash
+cd ~/adaptive-iot-honeypot
+bash pi/run_all.sh
+```
+
+This starts the real broker, decoy broker, decoy publisher, inspection proxy, dashboard, alerting, and ThingSpeak uploader. The command returns after starting them in the background.
+
+### 5. Windows laptop, browser — open the live displays
+
+Open the Pi dashboard, replacing the example with the actual Pi IP:
+
+```text
+http://192.168.1.10:5000
+```
+
+Also open the ThingSpeak channel's **Private View**. On the dashboard, click **Desktop alerts: enable** and allow browser notifications.
+
+### 6. Raspberry Pi, Terminal 2 — monitor real MQTT traffic
+
+```bash
+cd ~/adaptive-iot-honeypot
+set -a
+source config.env
+set +a
+mosquitto_sub -h 127.0.0.1 -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t 'home/door/#' -v
+```
+
+Expected messages include `home/door/motion` and a retained `home/door/status` JSON object containing `locked`, `led_on`, and `source`.
+
+### 7. Raspberry Pi, Terminal 3 — prove the real LED changes
+
+Load the configuration once in this terminal:
+
+```bash
+cd ~/adaptive-iot-honeypot
+set -a
+source config.env
+set +a
+```
+
+Legitimate unlock command:
+
+```bash
+mosquitto_pub -h 127.0.0.1 -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t home/door/lock -m unlock
+```
+
+Expected: the ESP32 reports `UNLOCKED`, the external LED turns **OFF**, and the dashboard/ThingSpeak state changes to `0`.
+
+Legitimate lock command:
+
+```bash
+mosquitto_pub -h 127.0.0.1 -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t home/door/lock -m lock
+```
+
+Expected: the ESP32 reports `LOCKED`, the external LED turns **ON**, and the dashboard/ThingSpeak state changes to `1`.
+
+### 8. Raspberry Pi, Terminal 4 — watch security and cloud logs
+
+```bash
+cd ~/adaptive-iot-honeypot
+tail -f logs/proxy.log
+```
+
+In another Pi terminal, the alert-only stream can be watched with:
+
+```bash
+cd ~/adaptive-iot-honeypot
+tail -f logs/alerts.log
+```
+
+Successful cloud uploads appear in `logs/proxy.log` as `ThingSpeak update stored as entry ...`.
+
+### 9. Windows laptop, PowerShell — prepare the attacker client once
+
+The laptop should contain a copy of this repository. From its repository root:
+
+```powershell
+Set-Location "E:\Ali\adaptive-iot-honeypot"
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Edit the laptop copy of `config.env` so `PI_IP` is the Raspberry Pi's LAN address. Do not add the laptop's Wi-Fi IP to the Pi's `WHITELIST_IPS`.
+
+### 10. Windows laptop, PowerShell — run the authorized attack
+
+First ensure the real device is locked and its LED is on. Then run:
+
+```powershell
+Set-Location "E:\Ali\adaptive-iot-honeypot"
+.\.venv\Scripts\python.exe .\attacker\attack.py
+```
+
+Do not use `--source-ip 127.0.0.2` when attacking from a separate laptop. The proxy should see the laptop's actual Wi-Fi IP. Expected progression is `allow → throttle → restrict → decoy`. The decoy receives the attacker's final fake `unlock`, while the real ESP32 remains `LOCKED` and its physical LED remains **ON**.
+
+If a second machine is unavailable, run the isolated local demonstration on the Pi instead:
+
+```bash
+cd ~/adaptive-iot-honeypot
+PI_IP=127.0.0.1 .venv/bin/python attacker/attack.py --source-ip 127.0.0.2
+```
+
+Keep `127.0.0.2` out of `WHITELIST_IPS`.
+
+### 11. Windows laptop, browser — export or clear evidence
+
+Open the dashboard's **Events** page. Click **Export CSV** to download `honeypot-attack-events.csv`. Click **Clear logs** only after saving required evidence. To reset both stored logs and the proxy's in-memory scores for a completely fresh demonstration, clear the logs and then restart the Pi stack.
+
+### 12. Raspberry Pi, any terminal — stop or restart
+
+Stop all managed components:
+
+```bash
+cd ~/adaptive-iot-honeypot
+bash pi/stop_all.sh
+```
+
+Restart:
+
+```bash
+cd ~/adaptive-iot-honeypot
+bash pi/run_all.sh
+```
+
 ## Native Windows Development
 
 Install 64-bit Python 3.11 or newer and the native [Mosquitto for Windows](https://mosquitto.org/download/). Mosquitto supplies `mosquitto.exe`, `mosquitto_passwd.exe`, and the `mosquitto_sub.exe` client used by the smoke test. Its default `C:\Program Files\Mosquitto` directory is detected automatically; no Bash, WSL, VM, or Docker is required.
@@ -176,6 +340,36 @@ Unit tests cover all scoring signals, four adaptive levels, caps, decay, whiteli
 ## SOC dashboard and APIs
 
 The multi-page dashboard at `http://PI_IP:5000` has a persistent SOC navigation rail and a light/dark theme toggle that follows the system preference initially and remembers the operator's selection. Overview and Events update every three seconds without a full-page refresh.
+
+The Events page can export the complete evidence stream as a spreadsheet-safe CSV and can clear recorded events, sessions, attacker summaries, decoy messages, and the JSON alert log after confirmation. Clearing logs does not erase the latest trusted physical-device state. Because the proxy owns live in-memory scores, restart the stack as well when a completely fresh scoring demonstration is required.
+
+Medium, high, and critical activity creates an in-dashboard alert on every page with the default `ALERT_MIN_ACTION=throttle`. Use **Desktop alerts: enable** once to grant browser notification permission. `ALERT_WEBHOOK_URL` remains available for sending the same cooldown-controlled JSON alert to an external notification service.
+
+### ThingSpeak telemetry
+
+Create a ThingSpeak channel with these numeric fields:
+
+1. Motion
+2. Locked (`1` locked, `0` unlocked)
+3. External LED (`1` on, `0` off)
+4. Risk score
+5. Adaptive action (`0` allow, `1` throttle, `2` restrict, `3` decoy)
+6. Event points
+
+Then set `THINGSPEAK_ENABLED=true`, `THINGSPEAK_WRITE_API_KEY=<channel write key>`, and optionally `THINGSPEAK_CHANNEL_ID=<channel id>` in `config.env`. Restart the stack. Uploads are performed by the proxy in a background thread and coalesced to ThingSpeak's 15-second minimum interval, so cloud outages never block MQTT traffic. Telemetry fields 1–3 are accepted only from a whitelisted client routed to the real broker; decoy commands therefore cannot falsify the displayed physical state.
+
+### External LED demonstration
+
+The ESP32 sketch uses `STATUS_LED_PIN` (GPIO 2 by default) with the convention **LED ON = LOCKED** and **LED OFF = UNLOCKED**. Connect an external LED through a suitable current-limiting resistor and change `STATUS_LED_PIN` if GPIO 2 is unsuitable for your board. `LED_ACTIVE_HIGH` supports either wiring polarity.
+
+For the demo, send a legitimate `lock` or `unlock` command through the proxy and observe the physical LED plus the Overview device card change. On Windows with the default configuration, for example:
+
+```powershell
+& "$env:ProgramFiles\Mosquitto\mosquitto_pub.exe" -h 127.0.0.1 -p 1883 -u iotuser -P change-this-before-demo -t home/door/lock -m unlock
+& "$env:ProgramFiles\Mosquitto\mosquitto_pub.exe" -h 127.0.0.1 -p 1883 -u iotuser -P change-this-before-demo -t home/door/lock -m lock
+```
+
+Next run the attack from a non-whitelisted IP. Its critical reconnect and `unlock` publish are handled by the decoy broker, so neither the real ESP32 nor its LED changes. The decoy attempt remains visible in Events, the attacker detail, CSV export, and ThingSpeak security fields.
 
 Dashboard pages:
 

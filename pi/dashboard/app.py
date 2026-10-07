@@ -3,13 +3,15 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import sys
 import time
 from collections import Counter
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, Response, abort, jsonify, render_template, request
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -18,6 +20,7 @@ from pi import db
 from pi.analysis.evaluate import first_high_critical_latencies, percentile
 from pi.config import addresses, integer, load_config, number
 from pi.security import action_for_score, risk_level, split_categories
+from pi.alerts import ACTION_ORDER
 
 app = Flask(__name__)
 
@@ -33,6 +36,13 @@ def query(sql: str, parameters: tuple[object, ...] = ()) -> list[dict[str, objec
 def bounded_limit(default: int = 100) -> int:
     try:
         return max(1, min(500, int(request.args.get("limit", default))))
+    except ValueError:
+        return default
+
+
+def bounded_nonnegative(name: str, default: int = 0) -> int:
+    try:
+        return max(0, int(request.args.get(name, default)))
     except ValueError:
         return default
 
@@ -59,6 +69,7 @@ def attacker_rows() -> list[dict[str, object]]:
 
 
 def stats_payload() -> dict[str, object]:
+    config = load_config()
     attackers = attacker_rows()
     risk_distribution = Counter(str(row["risk_level"]) for row in attackers)
     attack_distribution: Counter[str] = Counter()
@@ -72,6 +83,7 @@ def stats_payload() -> dict[str, object]:
     )
     first_seen = {str(row["ip"]): float(row["first_seen"]) for row in attackers}
     response_latencies = first_high_critical_latencies(response_events, first_seen)
+    device_rows = query("SELECT * FROM device_state WHERE id = 1")
     return {
         "total_attackers": len(attackers),
         "high_critical": sum(1 for row in attackers if row["risk_level"] in {"HIGH", "CRITICAL"}),
@@ -85,6 +97,9 @@ def stats_payload() -> dict[str, object]:
             "p95": percentile(response_latencies, 0.95),
             "samples": len(response_latencies),
         },
+        "device_state": device_rows[0] if device_rows else None,
+        "thingspeak_enabled": config.get("THINGSPEAK_ENABLED", "false").lower()
+        in {"1", "true", "yes", "on"} and bool(config.get("THINGSPEAK_WRITE_API_KEY", "").strip()),
         "generated_at": time.time(),
     }
 
@@ -148,6 +163,69 @@ def api_attackers():
 @app.get("/api/events")
 def api_events():
     return jsonify(query("SELECT rowid, * FROM events ORDER BY time DESC LIMIT ?", (bounded_limit(),)))
+
+
+@app.get("/api/alerts")
+def api_alerts():
+    """Return newly recorded high-severity events for dashboard notifications."""
+    after = bounded_nonnegative("after")
+    minimum = load_config().get("ALERT_MIN_ACTION", "restrict")
+    actions = [name for name, rank in ACTION_ORDER.items()
+               if rank >= ACTION_ORDER.get(minimum, ACTION_ORDER["restrict"])]
+    placeholders = ",".join("?" for _ in actions)
+    cursor_rows = query("SELECT COALESCE(MAX(rowid), 0) AS cursor FROM events")
+    cursor = int(cursor_rows[0]["cursor"])
+    if "after" not in request.args:
+        return jsonify({"cursor": cursor, "events": []})
+    # SQLite may reuse rowids after the Clear logs action empties the table.
+    if cursor < after:
+        after = 0
+    events = query(
+        f"SELECT rowid, * FROM events WHERE rowid > ? AND action IN ({placeholders}) "
+        "ORDER BY rowid LIMIT 20",
+        (after, *actions),
+    )
+    return jsonify({"cursor": max([after, *[int(row["rowid"]) for row in events]]),
+                    "events": events})
+
+
+def spreadsheet_safe(value: object) -> object:
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
+@app.get("/api/events/export.csv")
+def export_events_csv():
+    columns = ("time", "ip", "risk", "category", "signal", "points", "score",
+               "action", "detail", "response_latency_ms")
+    action_risks = {"allow": "LOW", "throttle": "MEDIUM", "restrict": "HIGH", "decoy": "CRITICAL"}
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(columns)
+    for row in query("SELECT * FROM events ORDER BY time"):
+        values = {**row, "risk": action_risks.get(str(row["action"]), "")}
+        writer.writerow([spreadsheet_safe(values.get(column, "")) for column in columns])
+    return Response(
+        output.getvalue(), mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=honeypot-attack-events.csv"},
+    )
+
+
+@app.post("/api/logs/clear")
+def clear_logs():
+    payload = request.get_json(silent=True) or {}
+    if payload.get("confirm") != "clear":
+        return jsonify({"error": "confirmation required"}), 400
+    db.clear_evidence(database_path())
+    config = load_config()
+    alert_path = ROOT / config.get("ALERT_LOG_FILE", "logs/alerts.log")
+    try:
+        alert_path.parent.mkdir(parents=True, exist_ok=True)
+        alert_path.write_text("", encoding="utf-8")
+    except OSError:
+        app.logger.exception("could not clear alert log")
+    return jsonify({"cleared": True})
 
 
 @app.get("/api/sessions")

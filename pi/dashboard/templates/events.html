@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Events{% endblock %}
 {% block content %}
-<header class="page-head"><div><div class="eyebrow">Evidence stream</div><h1>Events</h1><span class="muted">Live scoring signals and adaptive responses.</span></div><div class="status-line">Refresh 3s · <span id="visible-count">{{ events|length }}</span> visible</div></header>
+<header class="page-head"><div><div class="eyebrow">Evidence stream</div><h1>Events</h1><span class="muted">Live scoring signals and adaptive responses.</span></div><div class="toolbar"><a class="button" href="{{ url_for('export_events_csv') }}">Export CSV</a><button class="button danger" id="clear-logs" type="button">Clear logs</button><span class="status-line">Refresh 3s · <span id="visible-count">{{ events|length }}</span> visible</span></div></header>
 <section class="panel">
   <div class="filters">
     <div class="filter"><label for="risk-filter">Risk</label><select id="risk-filter"><option value="">All risks</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div>
@@ -21,6 +21,7 @@
     const riskFor = { allow: "LOW", throttle: "MEDIUM", restrict: "HIGH", decoy: "CRITICAL" };
     const riskFilter = document.getElementById("risk-filter"), actionFilter = document.getElementById("action-filter");
     const body = document.getElementById("events-body"), visibleCount = document.getElementById("visible-count");
+    const clearButton = document.getElementById("clear-logs");
     const applyFilters = () => {
       let visible = 0;
       body.querySelectorAll("tr:not(.empty-row)").forEach((row) => {
@@ -45,6 +46,16 @@
       catch (_) { /* retain the last good snapshot */ }
     };
     riskFilter.addEventListener("change", applyFilters); actionFilter.addEventListener("change", applyFilters);
+    clearButton.addEventListener("click", async () => {
+      if (!confirm("Clear all recorded attack events, sessions, attackers, decoy messages, and alert logs? The current physical-device state will be kept.")) return;
+      clearButton.disabled = true;
+      try {
+        const response = await fetch("{{ url_for('clear_logs') }}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "clear" }) });
+        if (!response.ok) throw new Error("clear failed");
+        render([]);
+      } catch (_) { alert("Could not clear logs. Check the dashboard log for details."); }
+      finally { clearButton.disabled = false; }
+    });
     applyFilters(); setInterval(refresh, 3000);
   })();
 </script>

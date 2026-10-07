@@ -35,7 +35,11 @@ class DoorSimulator:
         print(f"relay={state}", flush=True)
 
     def publish_status(self) -> None:
-        payload = json.dumps({"locked": self.locked, "source": "sim-esp32"})
+        payload = json.dumps({
+            "locked": self.locked,
+            "led_on": self.locked,
+            "source": "sim-esp32",
+        })
         self.client.publish("home/door/status", payload, retain=True)
 
     def on_connect(self, client: mqtt.Client, _userdata: object, _flags: dict,

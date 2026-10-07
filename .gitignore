@@ -11,3 +11,4 @@ logs/
 run/
 sim/relay_state.txt
 work/
+esp32/esp32_node/secrets.h

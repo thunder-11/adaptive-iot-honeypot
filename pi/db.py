@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS attackers (
     fingerprint_label TEXT NOT NULL DEFAULT 'low-information',
     historical_behavior TEXT NOT NULL DEFAULT '[]'
 );
+CREATE TABLE IF NOT EXISTS device_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    time REAL NOT NULL,
+    ip TEXT NOT NULL,
+    locked INTEGER NOT NULL,
+    led_on INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT ''
+);
 """
 
 EVENT_COLUMNS = {
@@ -197,4 +205,24 @@ def checkpoint_scores(scores: Iterable[tuple[float, str, float, str]],
                WHERE ip = ?""",
             ((seen, score, action, ip) for seen, ip, score, action in scores),
         )
+
+
+def update_device_state(time_value: float, ip: str, locked: bool, led_on: bool,
+                        source: str, path: Path = DEFAULT_DB) -> None:
+    """Store the last state confirmed by the whitelisted real device."""
+    with connect(path) as connection:
+        connection.execute(
+            """INSERT INTO device_state(id, time, ip, locked, led_on, source)
+               VALUES (1, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET time=excluded.time, ip=excluded.ip,
+                 locked=excluded.locked, led_on=excluded.led_on, source=excluded.source""",
+            (time_value, ip, int(locked), int(led_on), source[:100]),
+        )
+
+
+def clear_evidence(path: Path = DEFAULT_DB) -> None:
+    """Clear recorded security evidence without changing live device state."""
+    with connect(path) as connection:
+        for table in ("events", "sessions", "decoy_messages", "attackers"):
+            connection.execute(f"DELETE FROM {table}")
 

@@ -13,6 +13,15 @@
   <div class="stat"><span class="eyebrow">First response p50</span><strong id="latency-p50">{{ '%.1f ms'|format(stats.first_high_critical_latency_ms.p50) if stats.first_high_critical_latency_ms.p50 is not none else '—' }}</strong></div>
   <div class="stat"><span class="eyebrow">First response p95</span><strong id="latency-p95">{{ '%.1f ms'|format(stats.first_high_critical_latency_ms.p95) if stats.first_high_critical_latency_ms.p95 is not none else '—' }}</strong></div>
 </div>
+<section class="panel">
+  <h2>Real device / external LED</h2>
+  <div class="device-state">
+    <span class="led{% if stats.device_state and stats.device_state.led_on %} on{% endif %}" id="device-led" aria-label="External LED state"></span>
+    <div><strong id="device-lock">{% if stats.device_state %}{{ 'LOCKED' if stats.device_state.locked else 'UNLOCKED' }}{% else %}WAITING FOR DEVICE{% endif %}</strong><div class="status-line" id="device-detail">{% if stats.device_state %}LED {{ 'ON' if stats.device_state.led_on else 'OFF' }} · real path · {{ stats.device_state.source }}{% else %}No trusted status received yet{% endif %}</div></div>
+  </div>
+  <p class="muted">Only status published by a whitelisted device on the real broker path changes this indicator. Commands handled by the decoy cannot alter the physical LED.</p>
+  <div class="status-line">ThingSpeak: <strong id="thingspeak-state">{{ 'enabled' if stats.thingspeak_enabled else 'disabled' }}</strong></div>
+</section>
 <div class="grid">
   <section class="panel"><h2>Risk distribution</h2><div class="distribution" id="risk-distribution">
     {% for name, count in stats.risk_distribution.items() %}
@@ -54,6 +63,11 @@
         setText("latency-p50", stats.first_high_critical_latency_ms.p50 === null ? "—" : `${stats.first_high_critical_latency_ms.p50.toFixed(1)} ms`);
         setText("latency-p95", stats.first_high_critical_latency_ms.p95 === null ? "—" : `${stats.first_high_critical_latency_ms.p95.toFixed(1)} ms`);
         setText("generated-at", stats.generated_at.toFixed(3));
+        const device = stats.device_state, led = document.getElementById("device-led");
+        led.classList.toggle("on", Boolean(device && device.led_on));
+        setText("device-lock", device ? (device.locked ? "LOCKED" : "UNLOCKED") : "WAITING FOR DEVICE");
+        setText("device-detail", device ? `LED ${device.led_on ? "ON" : "OFF"} · real path · ${device.source}` : "No trusted status received yet");
+        setText("thingspeak-state", stats.thingspeak_enabled ? "enabled" : "disabled");
         renderDistribution(document.getElementById("risk-distribution"), ["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((name) => [name, stats.risk_distribution[name]]), true);
         renderDistribution(document.getElementById("attack-distribution"), Object.entries(stats.attack_distribution));
       } catch (_) { /* retain the last good snapshot */ }
