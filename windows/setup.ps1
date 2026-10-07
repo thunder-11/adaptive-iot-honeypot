@@ -12,7 +12,9 @@ Assert-ConfigKeys $Config @('REAL_USER', 'REAL_PASS', 'REAL_PORT', 'DECOY_PORT')
 function Test-Python311 {
     param([string]$Executable, [string[]]$PrefixArguments = @())
     try {
-        $version = & $Executable @PrefixArguments -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}"); raise SystemExit(sys.version_info < (3, 11))' 2>$null
+        # Avoid quoted Python string literals here: Windows PowerShell 5.1's
+        # native argument binder can strip their quotes before invoking py.exe.
+        $version = & $Executable @PrefixArguments -c 'import sys; print(sys.version_info.major, sys.version_info.minor, sep=chr(46)); raise SystemExit(sys.version_info < (3, 11))' 2>$null
         if ($LASTEXITCODE -eq 0) {
             return [pscustomobject]@{ Executable = $Executable; Prefix = $PrefixArguments; Version = $version }
         }
