@@ -82,5 +82,32 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $passwordFile -PathType
 Protect-PasswordFile $passwordFile
 Write-BrokerConfigs $Root $Config
 
+$tlsCertValue = [string]$Config.TLS_CERT_PATH
+$tlsKeyValue = [string]$Config.TLS_KEY_PATH
+if ($tlsCertValue -or $tlsKeyValue) {
+    if (-not $tlsCertValue -or -not $tlsKeyValue) {
+        throw 'TLS_CERT_PATH and TLS_KEY_PATH must both be set or both be empty.'
+    }
+    $tlsCert = if ([System.IO.Path]::IsPathRooted($tlsCertValue)) {
+        $tlsCertValue
+    } else { Join-Path $Root $tlsCertValue }
+    $tlsKey = if ([System.IO.Path]::IsPathRooted($tlsKeyValue)) {
+        $tlsKeyValue
+    } else { Join-Path $Root $tlsKeyValue }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $tlsCert), (Split-Path -Parent $tlsKey) | Out-Null
+    if (-not (Test-Path -LiteralPath $tlsCert -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $tlsKey -PathType Leaf)) {
+        $openssl = Get-Command 'openssl.exe' -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if (-not $openssl) {
+            throw 'TLS paths are configured but openssl.exe was not found. Install OpenSSL, or provide an existing PEM certificate and key.'
+        }
+        & $openssl.Source req -x509 -newkey rsa:2048 -nodes -days 365 `
+            -keyout $tlsKey -out $tlsCert -subj "/CN=$($Config.PI_IP)"
+        if ($LASTEXITCODE -ne 0) { throw 'OpenSSL failed to generate the local demo TLS certificate.' }
+        Write-Output "Generated local demo TLS certificate: $tlsCert"
+    }
+}
+
 Write-Output "Mosquitto: $mosquitto"
 Write-Output 'Windows setup complete. Next: .\windows\run_all.ps1'

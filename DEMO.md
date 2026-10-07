@@ -156,7 +156,7 @@ In MQTT Explorer (or another MQTT 3.1.1 client), create this connection:
 | Protocol | MQTT 3.1.1 |
 | Username | `REAL_USER` value |
 | Password | `REAL_PASS` value |
-| TLS | Off for this isolated classroom LAN |
+| TLS | Off when both TLS paths are empty; on when the proxy is configured with the generated/trusted certificate |
 
 Subscribe to `home/door/#`. Publish `lock` or `unlock` to `home/door/lock`. The phone follows the real path while its score remains below MEDIUM.
 

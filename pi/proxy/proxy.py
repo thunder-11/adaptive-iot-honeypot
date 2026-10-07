@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+import ssl
 import sys
 import time
 from collections import defaultdict
@@ -36,6 +37,24 @@ from pi.security import category_for_signal
 LOGGER = logging.getLogger("mqtt-proxy")
 MAX_BUFFER = 1024 * 1024
 COMMAND_TOPICS = {"home/door/lock"}
+
+
+def tls_server_context(config: dict[str, str]) -> ssl.SSLContext | None:
+    cert_value = config.get("TLS_CERT_PATH", "").strip()
+    key_value = config.get("TLS_KEY_PATH", "").strip()
+    if bool(cert_value) != bool(key_value):
+        raise ValueError("TLS_CERT_PATH and TLS_KEY_PATH must both be set or both be empty")
+    if not cert_value:
+        return None
+    cert_path = Path(cert_value)
+    key_path = Path(key_value)
+    if not cert_path.is_absolute():
+        cert_path = ROOT / cert_path
+    if not key_path.is_absolute():
+        key_path = ROOT / key_path
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert_path, key_path)
+    return context
 
 
 def build_scorer(config: dict[str, str]) -> RiskScorer:
@@ -125,8 +144,11 @@ class Proxy:
 
     async def start(self) -> None:
         port = integer(self.config, "PROXY_PORT")
-        self.server = await asyncio.start_server(self.handle_client, "0.0.0.0", port)
-        LOGGER.info("proxy listening on 0.0.0.0:%d", port)
+        tls = tls_server_context(self.config)
+        self.server = await asyncio.start_server(
+            self.handle_client, "0.0.0.0", port, ssl=tls
+        )
+        LOGGER.info("proxy listening on %s://0.0.0.0:%d", "mqtts" if tls else "mqtt", port)
         checkpoint_task = asyncio.create_task(self._checkpoint_loop())
         try:
             async with self.server:

@@ -21,7 +21,7 @@ This mini project puts an inspecting MQTT proxy in front of a real IoT broker an
 ```text
  ESP32 / phone / test laptop
             |
-       MQTT :1883
+   MQTT or MQTT/TLS :1883
             v
  +-------------------------+       +--------------------------+
  | asyncio inspection proxy|------>| real Mosquitto           |
@@ -70,8 +70,9 @@ Edit only `config.env` for the gateway and Python tools. Comma-separated IP list
 - `DECOY_PROFILE=auto|smart_lock|thermostat` selects the advertised fake device; `auto` uses the connecting client identifier when possible.
 - `ALERT_*` enables cooldown-controlled JSON-line logging and an optional HTTP webhook for high/critical activity.
 - `REAL_USER`, `REAL_PASS`: used by the real broker, simulator, ESP32, phone, and legitimate CLI clients.
+- `TLS_CERT_PATH` and `TLS_KEY_PATH`: leave both empty for the existing plaintext classroom flow. Set both to PEM paths to terminate TLS on the client-facing proxy port; relative paths resolve from the repository root.
 
-After changing credentials, rerun `pi/setup_pi.sh` on Linux/Pi or `windows/setup.ps1` on Windows to regenerate `data/real.passwd`.
+After changing credentials, rerun `pi/setup_pi.sh` on Linux/Pi or `windows/setup.ps1` on Windows to regenerate `data/real.passwd`. When TLS paths are configured and either PEM file is missing, setup uses OpenSSL to generate a one-year self-signed local-demo certificate; provide trusted certificates yourself for any non-lab deployment. Plaintext clients continue to work only when both TLS paths are empty. TLS clients must trust the configured certificate and use the same `PROXY_PORT`.
 
 ## Raspberry Pi quick start
 
@@ -246,7 +247,7 @@ The report covers detection/false-positive rates when labels exist, first high/c
 
 ## Limitations
 
-- This is a teaching prototype, not a TLS terminator, production IDS, or substitute for network segmentation.
+- This is a teaching prototype with optional basic TLS termination, not a production IDS, managed PKI, or substitute for network segmentation.
 - Enforcement remains IP-based, but fingerprints prioritize normalized MQTT client-ID patterns and CONNECT characteristics so matching behavior can correlate NAT'd or IPv6-rotating sources.
 - Fingerprints and the `/api/fingerprint/<label>` correlation are explainable “likely same actor” indicators, not identity attribution.
 - In-memory rolling windows reset on restart; current decayed score and historical evidence persist in SQLite.
