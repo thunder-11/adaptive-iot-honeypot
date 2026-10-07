@@ -9,6 +9,7 @@ import signal
 import sys
 import time
 from collections import defaultdict
+from contextlib import suppress
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -82,6 +83,22 @@ class Proxy:
                           (now - row["last_seen"]) * self.scorer.config.decay_per_second)
             self.scorer.seed(row["ip"], decayed)
 
+    def _checkpoint_scores(self) -> None:
+        checkpointed_at = time.time()
+        snapshot = []
+        for ip in tuple(self.scorer.states):
+            score = self.scorer.score(ip)
+            if score > 0:
+                snapshot.append((checkpointed_at, ip, score, self.scorer.action(ip)))
+        if snapshot:
+            db.checkpoint_scores(snapshot)
+
+    async def _checkpoint_loop(self) -> None:
+        interval = max(0.1, number(self.config, "SCORE_CHECKPOINT_SEC"))
+        while True:
+            await asyncio.sleep(interval)
+            self._checkpoint_scores()
+
     def log_event(self, ip: str, detail: str, *, signal: str = "", points: float = 0.0,
                   started_at: float | None = None) -> float:
         score = self.scorer.score(ip)
@@ -109,8 +126,15 @@ class Proxy:
         port = integer(self.config, "PROXY_PORT")
         self.server = await asyncio.start_server(self.handle_client, "0.0.0.0", port)
         LOGGER.info("proxy listening on 0.0.0.0:%d", port)
-        async with self.server:
-            await self.server.serve_forever()
+        checkpoint_task = asyncio.create_task(self._checkpoint_loop())
+        try:
+            async with self.server:
+                await self.server.serve_forever()
+        finally:
+            checkpoint_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await checkpoint_task
+            self._checkpoint_scores()
 
     async def handle_client(self, reader: asyncio.StreamReader,
                             writer: asyncio.StreamWriter) -> None:

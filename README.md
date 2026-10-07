@@ -11,7 +11,7 @@ This mini project puts an inspecting MQTT proxy in front of a real IoT broker an
 - Native Windows and Linux/Pi lifecycle and smoke-test scripts are provided; neither Windows path requires WSL, a VM, or Docker.
 - MQTT 3.1.1 is the inspected protocol because that is what PubSubClient uses. Other protocol levels are forwarded to the selected backend and explicitly logged without deep inspection.
 - The proxy and brokers run on one Pi, so backend connections use `127.0.0.1`. Only values intended to vary are stored in `config.env`; broker templates are rendered from it into `run/`.
-- A score lives in proxy memory and resets when the proxy restarts. Audit records remain in SQLite.
+- Live scores are checkpointed to SQLite and restored with elapsed-time decay when the proxy restarts. Transient rate windows still restart empty.
 - Failed-auth points are capped at 40 per source IP for the proxy lifetime. Scores themselves decay linearly.
 - The decoy broker is deliberately anonymous and listens on all interfaces as requested. Clients should still be told to use only port 1883; no firewall rules are changed.
 - Relay “locked/unlocked” is a demo abstraction. Adapt the mechanical fail-safe behavior to the actual lock before physical deployment.
@@ -65,6 +65,7 @@ Edit only `config.env` for the gateway and Python tools. Comma-separated IP list
 - `DECOY_FORCE_IPS`: optional demo safety switch; these addresses route directly to the decoy regardless of score. Leave it empty when demonstrating the complete score transition.
 - `MEDIUM=21`, `HIGH=41`, `CRITICAL=51`: throttle, restrict, and decoy boundaries.
 - All `WEIGHT_*`, rate/window/limit, decay, and delay fields keep behavioral decisions explainable and configurable.
+- `SCORE_CHECKPOINT_SEC` controls how often live non-zero scores are persisted without creating synthetic evidence events.
 - `DECOY_PROFILE=auto|smart_lock|thermostat` selects the advertised fake device; `auto` uses the connecting client identifier when possible.
 - `ALERT_*` enables cooldown-controlled JSON-line logging and an optional HTTP webhook for high/critical activity.
 - `REAL_USER`, `REAL_PASS`: used by the real broker, simulator, ESP32, phone, and legitimate CLI clients.

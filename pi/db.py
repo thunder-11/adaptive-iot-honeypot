@@ -186,3 +186,15 @@ def restore_scores(path: Path = DEFAULT_DB) -> list[sqlite3.Row]:
         path=path,
     )
 
+
+def checkpoint_scores(scores: Iterable[tuple[float, str, float, str]],
+                      path: Path = DEFAULT_DB) -> None:
+    """Persist live risk without adding synthetic evidence events."""
+    with connect(path) as connection:
+        connection.executemany(
+            """UPDATE attackers
+               SET last_seen = ?, current_score = ?, current_action = ?
+               WHERE ip = ?""",
+            ((seen, score, action, ip) for seen, ip, score, action in scores),
+        )
+

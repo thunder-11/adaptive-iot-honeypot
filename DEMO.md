@@ -168,7 +168,7 @@ Subscribe to `home/door/#`. Publish `lock` or `unlock` to `home/door/lock`. The 
 
 3. **Open the dashboard:** show the ESP32/phone action as `allow`. Say, “SQLite keeps the evidence while WAL mode lets the proxy and dashboard work concurrently.”
 
-4. **Run attack stages 1–2:** execute the laptop command. Point out connection rate, failed CONNACK 4/5 events, `throttle`, `restrict`, then score 51+. Say, “Risk is behavior-based, explainable, persistent, and decays over time; capped contributions resist unbounded scores.”
+4. **Run attack stages 1–2:** execute the laptop command. Point out connection rate, failed CONNACK 4/5 events, `throttle`, `restrict`, then score 51+. Say, “Risk is behavior-based, explainable, checkpointed across proxy restarts, and decays over time; capped contributions resist unbounded scores.”
 
 5. **Explain the forced reconnect:** show the real session ending and a decoy session starting. Say, “HIGH restricts dangerous packets; crossing CRITICAL closes open attacker sockets, so its reconnect is routed using the new score.”
 
