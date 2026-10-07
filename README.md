@@ -191,6 +191,7 @@ GET /api/events?limit=100
 GET /api/sessions?limit=100
 GET /api/attacker/<ip>
 GET /api/risk/<ip>
+GET /api/fingerprint/<label>
 ```
 
 ## Attack categories and decision flow
@@ -245,8 +246,8 @@ The report covers detection/false-positive rates when labels exist, first high/c
 ## Limitations
 
 - This is a teaching prototype, not a TLS terminator, production IDS, or substitute for network segmentation.
-- Risk is IP-based; NAT can group clients and IPv6 privacy addresses can split one actor.
-- Fingerprints are explainable behavioral similarities, not identity attribution.
+- Enforcement remains IP-based, but fingerprints prioritize normalized MQTT client-ID patterns and CONNECT characteristics so matching behavior can correlate NAT'd or IPv6-rotating sources.
+- Fingerprints and the `/api/fingerprint/<label>` correlation are explainable “likely same actor” indicators, not identity attribution.
 - In-memory rolling windows reset on restart; current decayed score and historical evidence persist in SQLite.
 - MQTT 3.1.1 is deeply inspected. Other protocol levels are forwarded and logged as protocol abuse without full semantic parsing.
 - Webhook delivery is best effort and intentionally non-blocking; consult the local alert log as the audit source.

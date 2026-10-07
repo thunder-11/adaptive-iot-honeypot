@@ -13,6 +13,15 @@ def test_classification_risk_and_fingerprint_are_explainable():
     second = behavior_fingerprint(["Brute Force"], ["failed_auth"] * 3, ["username=root"])
     assert first == second
     assert first[1] == "credential-bruteforcer"
+    rotating_a = behavior_fingerprint(
+        ["Reconnaissance"], ["wildcard_subscription"],
+        ["route=real client=sensor-001 connect_flags=0x02 keepalive=60 clean_session=1 will=0"],
+    )
+    rotating_b = behavior_fingerprint(
+        ["Reconnaissance"], ["wildcard_subscription", "wildcard_subscription"],
+        ["route=real client=sensor-947 connect_flags=0x02 keepalive=60 clean_session=1 will=0"],
+    )
+    assert rotating_a == rotating_b
 
 
 def test_database_migration_and_persistent_attacker_history():

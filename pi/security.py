@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import Counter
 from typing import Iterable, Mapping
 
@@ -56,16 +57,44 @@ def action_for_score(score: float, medium: float, high: float, critical: float) 
     }[risk_level(score, medium, high, critical)]
 
 
+def _client_id_pattern(client_id: str) -> str:
+    """Normalize rotating numeric/hex identity suffixes without discarding structure."""
+    value = client_id.strip().lower()
+    value = re.sub(r"[0-9a-f]{8}-[0-9a-f-]{27,}", "{uuid}", value)
+    value = re.sub(r"[0-9a-f]{8,}", "{hex}", value)
+    return re.sub(r"\d+", "{n}", value)
+
+
 def behavior_fingerprint(categories: Iterable[str], signals: Iterable[str],
                          details: Iterable[str] = ()) -> tuple[str, str]:
     """Return a stable short hash plus an explainable behavioral label."""
     category_counts = Counter(item for item in categories if item)
     signal_counts = Counter(item for item in signals if item)
+    detail_values = list(details)
+    client_patterns = sorted({
+        _client_id_pattern(match.group(1))
+        for detail in detail_values
+        for match in re.finditer(r"(?:^|\s)client=([^\s]+)", detail)
+        if match.group(1) != "-"
+    })
+    connect_profiles = sorted({
+        match.group(0)
+        for detail in detail_values
+        for match in re.finditer(
+            r"connect_flags=0x[0-9a-fA-F]+\s+keepalive=\d+\s+clean_session=[01]\s+will=[01]",
+            detail,
+        )
+    })
+    identity_present = bool(client_patterns or connect_profiles)
     features = {
-        "categories": sorted(category_counts.items()),
-        "signals": sorted(signal_counts.items()),
+        # Once CONNECT identity exists, presence is more stable than event counts and
+        # intentionally carries more identity weight than traffic-volume differences.
+        "categories": sorted(category_counts) if identity_present else sorted(category_counts.items()),
+        "signals": sorted(signal_counts) if identity_present else sorted(signal_counts.items()),
+        "client_id_patterns": client_patterns,
+        "connect_profiles": connect_profiles,
         "payload_traits": sorted({
-            trait for detail in details for trait in (
+            trait for detail in detail_values for trait in (
                 "unlock" if "unlock" in detail.lower() else "",
                 "wildcard" if "wildcard" in detail.lower() else "",
                 "credential" if "username=" in detail.lower() else "",

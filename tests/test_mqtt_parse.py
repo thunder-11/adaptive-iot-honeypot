@@ -45,6 +45,10 @@ def test_connect_username_and_protocol():
     assert (info.protocol_name, info.protocol_level, info.client_id, info.username) == (
         "MQTT", 4, "client", "user"
     )
+    assert info.connect_flags == 0xC2
+    assert info.keepalive == 60
+    assert info.clean_session is True
+    assert info.has_will is False
 
 
 def test_subscribe_and_wildcard():

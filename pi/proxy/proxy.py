@@ -176,7 +176,9 @@ class Proxy:
             session_id = db.start_session(ip, backend, time.time(), profile=profile_name if backend == "decoy" else "")
             self.log_event(
                 ip, f"route={backend} client={info.client_id} username={info.username or '-'} "
-                    f"profile={profile_name if backend == 'decoy' else '-'}",
+                    f"profile={profile_name if backend == 'decoy' else '-'} "
+                    f"connect_flags=0x{info.connect_flags:02x} keepalive={info.keepalive} "
+                    f"clean_session={int(info.clean_session)} will={int(info.has_will)}",
                 started_at=connection_started,
             )
             backend_writer.write(connect_packet)

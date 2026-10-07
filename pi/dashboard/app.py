@@ -160,6 +160,16 @@ def api_risk(ip: str):
         "attack_types", "fingerprint", "fingerprint_label", "first_seen", "last_seen"
     )})
 
+
+@app.get("/api/fingerprint/<path:label>")
+def api_fingerprint(label: str):
+    return jsonify(query(
+        "SELECT ip, fingerprint, fingerprint_label, first_seen, last_seen, "
+        "current_score, current_action, highest_risk FROM attackers "
+        "WHERE fingerprint_label = ? ORDER BY first_seen",
+        (label,),
+    ))
+
 if __name__ == "__main__":
     cfg = load_config()
     app.run(host="0.0.0.0", port=integer(cfg, "DASH_PORT"), debug=False)

@@ -37,3 +37,5 @@ def test_dashboard_pages_and_json_apis():
     assert attacker["timeline"][0]["signal"] == "wildcard_subscription"
     assert attacker["decoy_messages"][0]["payload"] == "unlock"
     assert client.get("/api/risk/10.0.0.9").get_json()["highest_risk"] == 60
+    matches = client.get(f"/api/fingerprint/{attacker['fingerprint_label']}").get_json()
+    assert [row["ip"] for row in matches] == ["10.0.0.9"]

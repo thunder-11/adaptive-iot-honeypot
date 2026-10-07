@@ -15,6 +15,10 @@ class ConnectInfo:
     protocol_level: int
     client_id: str
     username: str | None
+    connect_flags: int
+    keepalive: int
+    clean_session: bool
+    has_will: bool
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,7 @@ def parse_connect(packet: bytes) -> ConnectInfo:
         raise MQTTParseError("truncated CONNECT variable header")
     level = body[offset]
     flags = body[offset + 1]
+    keepalive = int.from_bytes(body[offset + 2:offset + 4], "big")
     offset += 4  # protocol level, flags, and keepalive
     client_id, offset = _field(body, offset)
     if flags & 0x04:  # Will topic and payload
@@ -110,7 +115,10 @@ def parse_connect(packet: bytes) -> ConnectInfo:
         username, offset = _field(body, offset)
     if flags & 0x40:
         _, offset = _field(body, offset)
-    return ConnectInfo(protocol_name, level, client_id, username)
+    return ConnectInfo(
+        protocol_name, level, client_id, username, flags, keepalive,
+        bool(flags & 0x02), bool(flags & 0x04),
+    )
 
 
 def parse_subscribe(packet: bytes) -> list[str]:
