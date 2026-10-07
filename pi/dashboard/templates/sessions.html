@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Sessions{% endblock %}
+{% block content %}
+<header class="page-head"><div><div class="eyebrow">Connection ledger</div><h1>Sessions</h1><span class="muted">Recent routed sessions and selected device profiles.</span></div><div class="status-line">Latest {{ sessions|length }}</div></header>
+<section class="panel"><div class="table-wrap"><table class="sortable"><thead><tr><th data-sort>IP</th><th data-sort>Backend</th><th data-sort>Profile</th><th data-sort>Start</th><th data-sort>End</th><th data-sort>Duration</th></tr></thead><tbody>
+  {% for row in sessions %}<tr><td>{{ row.ip }}</td><td>{{ row.backend }}</td><td>{{ row.profile or '-' }}</td><td data-sort-value="{{ row.start }}">{{ '%.3f'|format(row.start) }}</td><td data-sort-value="{{ row.end or '' }}">{{ '%.3f'|format(row.end) if row.end else 'active' }}</td><td data-sort-value="{{ (row.end - row.start) if row.end else '' }}">{{ '%.3f s'|format(row.end - row.start) if row.end else 'active' }}</td></tr>
+  {% else %}<tr><td colspan="6" class="empty">No sessions recorded yet.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

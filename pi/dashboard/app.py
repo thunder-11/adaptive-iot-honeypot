@@ -78,14 +78,50 @@ def stats_payload() -> dict[str, object]:
     }
 
 
+def attacker_payload(ip: str) -> dict[str, object]:
+    rows = query("SELECT * FROM attackers WHERE ip = ?", (ip,))
+    if not rows:
+        abort(404)
+    attacker = current_risk(rows[0], load_config())
+    attacker["timeline"] = query("SELECT rowid, * FROM events WHERE ip = ? ORDER BY time", (ip,))
+    attacker["sessions"] = query("SELECT rowid, * FROM sessions WHERE ip = ? ORDER BY start", (ip,))
+    attacker["decoy_messages"] = query(
+        "SELECT rowid, * FROM decoy_messages WHERE ip = ? ORDER BY time", (ip,)
+    )
+    attacker["historical_behavior"] = json.loads(str(attacker["historical_behavior"]) or "[]")
+    attacker["similar_attackers"] = query(
+        "SELECT ip, fingerprint_label, highest_risk FROM attackers "
+        "WHERE fingerprint = ? AND ip != ? AND attack_count > 0",
+        (attacker["fingerprint"], ip),
+    )
+    return attacker
+
+
 @app.route("/")
 def index() -> str:
-    attackers = attacker_rows()
+    return render_template("index.html", stats=stats_payload())
+
+
+@app.get("/attackers")
+def attackers_page() -> str:
+    return render_template("attackers.html", attackers=attacker_rows())
+
+
+@app.get("/attacker/<path:ip>")
+def attacker_page(ip: str) -> str:
+    return render_template("attacker.html", attacker=attacker_payload(ip))
+
+
+@app.get("/events")
+def events_page() -> str:
     events = query("SELECT rowid, * FROM events ORDER BY time DESC LIMIT 100")
-    sessions = query("SELECT rowid, * FROM sessions ORDER BY start DESC LIMIT 50")
-    messages = query("SELECT rowid, * FROM decoy_messages ORDER BY time DESC LIMIT 100")
-    return render_template("index.html", stats=stats_payload(), attackers=attackers,
-                           events=events, sessions=sessions, messages=messages)
+    return render_template("events.html", events=events)
+
+
+@app.get("/sessions")
+def sessions_page() -> str:
+    sessions = query("SELECT rowid, * FROM sessions ORDER BY start DESC LIMIT 100")
+    return render_template("sessions.html", sessions=sessions)
 
 
 @app.get("/api/stats")
@@ -110,22 +146,7 @@ def api_sessions():
 
 @app.get("/api/attacker/<path:ip>")
 def api_attacker(ip: str):
-    rows = query("SELECT * FROM attackers WHERE ip = ?", (ip,))
-    if not rows:
-        abort(404)
-    attacker = current_risk(rows[0], load_config())
-    attacker["timeline"] = query("SELECT rowid, * FROM events WHERE ip = ? ORDER BY time", (ip,))
-    attacker["sessions"] = query("SELECT rowid, * FROM sessions WHERE ip = ? ORDER BY start", (ip,))
-    attacker["decoy_messages"] = query(
-        "SELECT rowid, * FROM decoy_messages WHERE ip = ? ORDER BY time", (ip,)
-    )
-    attacker["historical_behavior"] = json.loads(str(attacker["historical_behavior"]) or "[]")
-    attacker["similar_attackers"] = query(
-        "SELECT ip, fingerprint_label, highest_risk FROM attackers "
-        "WHERE fingerprint = ? AND ip != ? AND attack_count > 0",
-        (attacker["fingerprint"], ip),
-    )
-    return jsonify(attacker)
+    return jsonify(attacker_payload(ip))
 
 
 @app.get("/api/risk/<path:ip>")

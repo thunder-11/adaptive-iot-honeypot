@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Attacker {{ attacker.ip }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><div class="eyebrow">Attacker detail</div><h1 class="mono">{{ attacker.ip }}</h1><span class="muted">Evidence and related entities for this source.</span></div><a href="{{ url_for('attackers_page') }}">← All attackers</a></header>
+<div class="identity">
+  <div class="identity-item"><span class="eyebrow">Risk</span><strong class="{{ attacker.risk_level }}">{{ attacker.risk_level }} · {{ '%.1f'|format(attacker.current_score) }}</strong></div>
+  <div class="identity-item"><span class="eyebrow">Action</span><strong class="{{ attacker.current_action }}">{{ attacker.current_action }}</strong></div>
+  <div class="identity-item"><span class="eyebrow">Attacks</span><strong>{{ attacker.attack_count }}</strong></div>
+  <div class="identity-item"><span class="eyebrow">Highest risk</span><strong>{{ '%.1f'|format(attacker.highest_risk) }}</strong></div>
+  <div class="identity-item"><span class="eyebrow">Fingerprint label</span><strong>{{ attacker.fingerprint_label }}</strong></div>
+  <div class="identity-item"><span class="eyebrow">Fingerprint</span><strong><code>{{ attacker.fingerprint }}</code></strong></div>
+  <div class="identity-item"><span class="eyebrow">Attack types</span><strong>{{ attacker.attack_types }}</strong></div>
+  <div class="identity-item"><span class="eyebrow">Observed</span><strong>{{ '%.3f'|format(attacker.first_seen) }} → {{ '%.3f'|format(attacker.last_seen) }}</strong></div>
+</div>
+<section class="panel"><h2>Timeline</h2><div class="table-wrap"><table><thead><tr><th>Time</th><th>Category</th><th>Signal</th><th>Points</th><th>Score</th><th>Action</th><th>Detail</th></tr></thead><tbody>
+  {% for row in attacker.timeline %}<tr><td>{{ '%.3f'|format(row.time) }}</td><td>{{ row.category or '-' }}</td><td>{{ row.signal or '-' }}</td><td>+{{ '%.1f'|format(row.points) }}</td><td>{{ '%.1f'|format(row.score) }}</td><td class="{{ row.action }}">{{ row.action }}</td><td class="wrap">{{ row.detail }}</td></tr>
+  {% else %}<tr><td colspan="7" class="empty">No events recorded for this attacker.</td></tr>{% endfor %}
+</tbody></table></div></section>
+<div class="grid">
+  <section class="panel"><h2>Sessions</h2><div class="table-wrap"><table><thead><tr><th>Backend</th><th>Profile</th><th>Start</th><th>End</th><th>Duration</th></tr></thead><tbody>
+    {% for row in attacker.sessions %}<tr><td>{{ row.backend }}</td><td>{{ row.profile or '-' }}</td><td>{{ '%.3f'|format(row.start) }}</td><td>{{ '%.3f'|format(row.end) if row.end else 'active' }}</td><td>{{ '%.3f s'|format(row.end - row.start) if row.end else 'active' }}</td></tr>
+    {% else %}<tr><td colspan="5" class="empty">No sessions recorded.</td></tr>{% endfor %}
+  </tbody></table></div></section>
+  <section class="panel"><h2>Similar attackers · same fingerprint</h2><div class="table-wrap"><table><thead><tr><th>IP</th><th>Label</th><th>Highest risk</th></tr></thead><tbody>
+    {% for row in attacker.similar_attackers %}<tr><td><a href="{{ url_for('attacker_page', ip=row.ip) }}">{{ row.ip }}</a></td><td>{{ row.fingerprint_label }}</td><td>{{ '%.1f'|format(row.highest_risk) }}</td></tr>
+    {% else %}<tr><td colspan="3" class="empty">No other attackers share this fingerprint.</td></tr>{% endfor %}
+  </tbody></table></div></section>
+</div>
+<section class="panel"><h2>Decoy messages</h2><div class="table-wrap"><table><thead><tr><th>Time</th><th>Topic</th><th>Payload</th></tr></thead><tbody>
+  {% for row in attacker.decoy_messages %}<tr><td>{{ '%.3f'|format(row.time) }}</td><td><code>{{ row.topic }}</code></td><td class="wrap">{{ row.payload }}</td></tr>
+  {% else %}<tr><td colspan="3" class="empty">No decoy messages recorded.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

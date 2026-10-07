@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Events{% endblock %}
+{% block content %}
+<header class="page-head"><div><div class="eyebrow">Evidence stream</div><h1>Events</h1><span class="muted">Live scoring signals and adaptive responses.</span></div><div class="status-line">Refresh 3s · <span id="visible-count">{{ events|length }}</span> visible</div></header>
+<section class="panel">
+  <div class="filters">
+    <div class="filter"><label for="risk-filter">Risk</label><select id="risk-filter"><option value="">All risks</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div>
+    <div class="filter"><label for="action-filter">Action</label><select id="action-filter"><option value="">All actions</option><option>allow</option><option>throttle</option><option>restrict</option><option>decoy</option></select></div>
+    <span class="status-line">Risk is mapped from the recorded action.</span>
+  </div>
+</section>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Time</th><th>IP</th><th>Risk</th><th>Category</th><th>Signal</th><th>Points</th><th>Score</th><th>Action</th><th>Detail</th></tr></thead><tbody id="events-body">
+  {% set action_risks = {'allow': 'LOW', 'throttle': 'MEDIUM', 'restrict': 'HIGH', 'decoy': 'CRITICAL'} %}
+  {% for row in events %}{% set event_risk = action_risks.get(row.action, '') %}<tr data-risk="{{ event_risk }}" data-action="{{ row.action }}"><td>{{ '%.3f'|format(row.time) }}</td><td>{{ row.ip }}</td><td class="{{ event_risk }}">{{ event_risk or '-' }}</td><td>{{ row.category or '-' }}</td><td>{{ row.signal or '-' }}</td><td>+{{ '%.1f'|format(row.points) }}</td><td>{{ '%.1f'|format(row.score) }}</td><td class="{{ row.action }}">{{ row.action }}</td><td class="wrap">{{ row.detail }}</td></tr>
+  {% else %}<tr class="empty-row"><td colspan="9" class="empty">No events recorded yet.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    const riskFor = { allow: "LOW", throttle: "MEDIUM", restrict: "HIGH", decoy: "CRITICAL" };
+    const riskFilter = document.getElementById("risk-filter"), actionFilter = document.getElementById("action-filter");
+    const body = document.getElementById("events-body"), visibleCount = document.getElementById("visible-count");
+    const applyFilters = () => {
+      let visible = 0;
+      body.querySelectorAll("tr:not(.empty-row)").forEach((row) => {
+        const show = (!riskFilter.value || row.dataset.risk === riskFilter.value) && (!actionFilter.value || row.dataset.action === actionFilter.value);
+        row.hidden = !show; if (show) visible += 1;
+      });
+      visibleCount.textContent = visible;
+    };
+    const cell = (value, className = "") => { const node = document.createElement("td"); node.textContent = value; node.className = className; return node; };
+    const render = (events) => {
+      body.replaceChildren();
+      if (!events.length) { const row = document.createElement("tr"); row.className = "empty-row"; const empty = cell("No events recorded yet.", "empty"); empty.colSpan = 9; row.appendChild(empty); body.appendChild(row); }
+      events.forEach((event) => {
+        const risk = riskFor[event.action] || "", row = document.createElement("tr"); row.dataset.risk = risk; row.dataset.action = event.action || "";
+        row.append(cell(Number(event.time).toFixed(3)), cell(event.ip), cell(risk || "-", risk), cell(event.category || "-"), cell(event.signal || "-"), cell(`+${Number(event.points).toFixed(1)}`), cell(Number(event.score).toFixed(1)), cell(event.action, riskFor[event.action] ? event.action : ""), cell(event.detail, "wrap"));
+        body.appendChild(row);
+      });
+      applyFilters();
+    };
+    const refresh = async () => {
+      try { const response = await fetch("{{ url_for('api_events', limit=100) }}", { cache: "no-store" }); if (response.ok) render(await response.json()); }
+      catch (_) { /* retain the last good snapshot */ }
+    };
+    riskFilter.addEventListener("change", applyFilters); actionFilter.addEventListener("change", applyFilters);
+    applyFilters(); setInterval(refresh, 3000);
+  })();
+</script>
+{% endblock %}

@@ -5,7 +5,7 @@ from pi import db
 from pi.dashboard.app import app
 
 
-def test_dashboard_and_json_apis():
+def test_dashboard_pages_and_json_apis():
     path = Path("work/test-dashboard.db")
     path.parent.mkdir(exist_ok=True)
     for candidate in (path, Path(str(path) + "-wal"), Path(str(path) + "-shm")):
@@ -17,9 +17,15 @@ def test_dashboard_and_json_apis():
     db.add_decoy_message(now + 1, "10.0.0.9", "home/door/lock", "unlock", path)
     app.config.update(TESTING=True, DB_PATH=str(path))
     client = app.test_client()
-    page = client.get("/")
-    assert page.status_code == 200
-    assert b"SOC Dashboard" in page.data
+    pages = ("/", "/attackers", "/events", "/sessions", "/attacker/10.0.0.9")
+    for route in pages:
+        page = client.get(route)
+        assert page.status_code == 200
+        assert b'id="theme-toggle"' in page.data
+        assert b"localStorage" in page.data
+    assert b"SOC Console" in client.get("/").data
+    assert client.get("/attacker/192.0.2.99").status_code == 404
+    assert client.get("/api/attacker/192.0.2.99").status_code == 404
     stats = client.get("/api/stats").get_json()
     assert stats["total_attackers"] == 1
     assert stats["sessions"] == 1

@@ -171,7 +171,15 @@ Unit tests cover all scoring signals, four adaptive levels, caps, decay, whiteli
 
 ## SOC dashboard and APIs
 
-The dashboard at `http://PI_IP:5000` shows total attackers, high/critical count, sessions, decoy hits, risk and attack distributions, persistent fingerprints, and a live event timeline. Per-IP details include connection, authentication, enumeration, suspicious activity, score/action changes, routes, sessions, decoy payloads, and attackers with the same fingerprint.
+The multi-page dashboard at `http://PI_IP:5000` has a persistent SOC navigation rail and a light/dark theme toggle that follows the system preference initially and remembers the operator's selection. Overview and Events update every three seconds without a full-page refresh.
+
+Dashboard pages:
+
+- `/` — live total attackers, high/critical count, sessions, decoy hits, risk distribution, and attack distribution.
+- `/attackers` — sortable attacker inventory with current risk/action, fingerprints, attack types, and observation times.
+- `/attacker/<ip>` — per-IP event timeline, sessions, decoy messages, and attackers sharing the same fingerprint.
+- `/events` — live scoring-event timeline with client-side risk and action filters.
+- `/sessions` — compact session ledger with backend, profile, timestamps, and duration.
 
 Read-only endpoints:
 

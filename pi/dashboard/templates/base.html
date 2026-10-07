@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script>
+    (() => {
+      let theme;
+      try { theme = localStorage.getItem("soc-theme"); } catch (_) { /* storage may be disabled */ }
+      if (theme !== "light" && theme !== "dark") {
+        theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      }
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
+  <title>{% block title %}Overview{% endblock %} · Adaptive IoT Honeypot SOC</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020; --nav-bg: #0e1628; --surface: #121d31; --surface-raised: #17243a;
+      --line: #2a3a55; --line-strong: #405473; --text: #e8edf5; --text-strong: #f8fafc;
+      --muted: #93a4bd; --accent: #7dd3fc; --accent-strong: #38bdf8; --accent-soft: #173b55;
+      --low: #86efac; --medium: #fde047; --high: #fb923c; --critical: #f87171;
+      --code: #c4b5fd; --focus: #bae6fd; --shadow: #050812;
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #e8f0f7; --nav-bg: #dce9f3; --surface: #f5f9fc; --surface-raised: #edf5fa;
+      --line: #b8cad9; --line-strong: #829bb0; --text: #15243a; --text-strong: #08172b;
+      --muted: #526b81; --accent: #075985; --accent-strong: #0369a1; --accent-soft: #c9e8f6;
+      --low: #16723a; --medium: #806500; --high: #a23f08; --critical: #b4232d;
+      --code: #6741a5; --focus: #0c4a6e; --shadow: #9eb1c2;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; }
+    a { color: var(--accent); } a:hover { color: var(--accent-strong); }
+    button, select { font: inherit; }
+    button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    .shell { min-height: 100vh; display: grid; grid-template-columns: 218px minmax(0, 1fr); }
+    .sidebar { position: sticky; top: 0; height: 100vh; padding: 1.15rem .85rem; background: var(--nav-bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 1.2rem; }
+    .brand { color: var(--text-strong); text-decoration: none; line-height: 1.2; }
+    .brand-mark { display: block; color: var(--accent); font: 700 .72rem ui-monospace, monospace; letter-spacing: .14em; }
+    .brand-name { display: block; margin-top: .3rem; font-weight: 750; }
+    .nav-links { display: grid; gap: .25rem; }
+    .nav-links a { padding: .55rem .65rem; border-left: 3px solid transparent; color: var(--muted); text-decoration: none; font: 600 .86rem ui-monospace, monospace; }
+    .nav-links a:hover { background: var(--surface); color: var(--text); }
+    .nav-links a.active { border-left-color: var(--accent-strong); background: var(--accent-soft); color: var(--accent); }
+    .sidebar-foot { margin-top: auto; }
+    .theme-toggle { width: 100%; padding: .55rem .65rem; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; font: 600 .78rem ui-monospace, monospace; }
+    .main { min-width: 0; padding: 1.35rem 1.55rem 2rem; }
+    .page-head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+    h1, h2, h3 { margin-top: 0; color: var(--text-strong); }
+    h1 { margin-bottom: .25rem; font-size: 1.45rem; }
+    h2 { margin-bottom: .75rem; font-size: .9rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); }
+    h3 { margin-bottom: .4rem; font-size: .9rem; }
+    p { line-height: 1.5; }
+    .muted { color: var(--muted); }
+    .mono, code, th, td, .eyebrow { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    code { color: var(--code); }
+    .eyebrow { color: var(--muted); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: .85rem; }
+    .stat { background: var(--surface); padding: .85rem 1rem; }
+    .stat strong { display: block; margin-top: .25rem; color: var(--text-strong); font: 700 1.65rem ui-monospace, monospace; }
+    .panel { min-width: 0; margin-bottom: .85rem; padding: .9rem 1rem; background: var(--surface); border: 1px solid var(--line); overflow: auto; box-shadow: 0 1px 2px var(--shadow); }
+    .distribution { display: grid; gap: .58rem; }
+    .distribution-row { display: grid; grid-template-columns: minmax(8rem, auto) 3rem 1fr; align-items: center; gap: .65rem; font: .8rem ui-monospace, monospace; }
+    .track { height: .48rem; background: var(--surface-raised); border: 1px solid var(--line); }
+    .bar { display: block; min-width: 2px; height: 100%; background: var(--accent-strong); }
+    .LOW, .allow { color: var(--low); } .MEDIUM, .throttle { color: var(--medium); }
+    .HIGH, .restrict { color: var(--high); } .CRITICAL, .decoy { color: var(--critical); }
+    .risk-bar.LOW { background: var(--low); } .risk-bar.MEDIUM { background: var(--medium); }
+    .risk-bar.HIGH { background: var(--high); } .risk-bar.CRITICAL { background: var(--critical); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .76rem; }
+    th, td { padding: .42rem .5rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
+    th { position: sticky; top: 0; z-index: 1; background: var(--surface-raised); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    th[data-sort] { cursor: pointer; user-select: none; } th[data-sort]::after { content: " ↕"; color: var(--line-strong); }
+    tbody tr:hover { background: var(--surface-raised); }
+    td.wrap { min-width: 16rem; white-space: normal; line-height: 1.35; }
+    .filters { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
+    .filter { display: grid; gap: .25rem; }
+    .filter label { color: var(--muted); font: .68rem ui-monospace, monospace; text-transform: uppercase; }
+    select { min-width: 10rem; padding: .38rem .5rem; border: 1px solid var(--line-strong); background: var(--surface-raised); color: var(--text); }
+    .status-line { font: .72rem ui-monospace, monospace; color: var(--muted); }
+    .identity { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: .85rem; }
+    .identity-item { padding: .7rem .8rem; background: var(--surface); }
+    .identity-item strong { display: block; margin-top: .22rem; font: 600 .82rem ui-monospace, monospace; overflow-wrap: anywhere; }
+    .empty { padding: 1rem .5rem; color: var(--muted); font-style: italic; }
+    @media (max-width: 860px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; padding: .8rem; flex-direction: row; flex-wrap: wrap; align-items: center; gap: .7rem; border-right: 0; border-bottom: 1px solid var(--line); }
+      .brand { margin-right: auto; } .nav-links { order: 3; width: 100%; grid-template-columns: repeat(4, 1fr); }
+      .nav-links a { text-align: center; border-left: 0; border-bottom: 3px solid transparent; }
+      .nav-links a.active { border-bottom-color: var(--accent-strong); }
+      .sidebar-foot { margin: 0; } .theme-toggle { width: auto; } .main { padding: 1rem; }
+      .stats { grid-template-columns: repeat(2, 1fr); } .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">ADAPTIVE IOT</span><span class="brand-name">SOC Console</span></a>
+      <nav class="nav-links" aria-label="Dashboard">
+        <a href="{{ url_for('index') }}" {% if request.endpoint == 'index' %}class="active" aria-current="page"{% endif %}>Overview</a>
+        <a href="{{ url_for('attackers_page') }}" {% if request.endpoint in ('attackers_page', 'attacker_page') %}class="active" aria-current="page"{% endif %}>Attackers</a>
+        <a href="{{ url_for('events_page') }}" {% if request.endpoint == 'events_page' %}class="active" aria-current="page"{% endif %}>Events</a>
+        <a href="{{ url_for('sessions_page') }}" {% if request.endpoint == 'sessions_page' %}class="active" aria-current="page"{% endif %}>Sessions</a>
+      </nav>
+      <div class="sidebar-foot"><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark theme">Theme: <span id="theme-label">dark</span></button></div>
+    </aside>
+    <main class="main">{% block content %}{% endblock %}</main>
+  </div>
+  <script>
+    (() => {
+      const root = document.documentElement, label = document.getElementById("theme-label"), button = document.getElementById("theme-toggle");
+      const syncLabel = () => { label.textContent = root.dataset.theme; };
+      syncLabel();
+      button.addEventListener("click", () => {
+        root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+        try { localStorage.setItem("soc-theme", root.dataset.theme); } catch (_) { /* storage may be disabled */ }
+        syncLabel();
+      });
+      document.querySelectorAll("table.sortable th[data-sort]").forEach((heading) => {
+        heading.addEventListener("click", () => {
+          const table = heading.closest("table"), body = table.tBodies[0];
+          const column = Array.from(heading.parentElement.children).indexOf(heading), ascending = heading.dataset.direction !== "asc";
+          const rows = Array.from(body.rows);
+          rows.sort((left, right) => {
+            const a = left.cells[column]?.dataset.sortValue ?? left.cells[column]?.textContent.trim() ?? "";
+            const b = right.cells[column]?.dataset.sortValue ?? right.cells[column]?.textContent.trim() ?? "";
+            const an = Number(a), bn = Number(b);
+            const comparison = a !== "" && b !== "" && Number.isFinite(an) && Number.isFinite(bn) ? an - bn : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+            return ascending ? comparison : -comparison;
+          });
+          table.querySelectorAll("th[data-sort]").forEach((item) => { delete item.dataset.direction; });
+          heading.dataset.direction = ascending ? "asc" : "desc";
+          rows.forEach((row) => body.appendChild(row));
+        });
+      });
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

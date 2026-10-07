@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Attackers{% endblock %}
+{% block content %}
+<header class="page-head"><div><div class="eyebrow">Entity inventory</div><h1>Attackers</h1><span class="muted">Observed sources, live decayed risk, and behavioral fingerprints.</span></div><div class="status-line">{{ attackers|length }} classified</div></header>
+<section class="panel">
+  <div class="table-wrap"><table class="sortable"><thead><tr>
+    <th data-sort>IP</th><th data-sort>Risk</th><th data-sort>Score</th><th data-sort>Action</th><th data-sort>Attacks</th><th data-sort>Fingerprint label</th><th data-sort>Fingerprint</th><th data-sort>Attack types</th><th data-sort>First seen</th><th data-sort>Last seen</th><th data-sort>Highest risk</th>
+  </tr></thead><tbody>
+    {% for row in attackers %}<tr>
+      <td><a href="{{ url_for('attacker_page', ip=row.ip) }}">{{ row.ip }}</a></td>
+      <td class="{{ row.risk_level }}">{{ row.risk_level }}</td>
+      <td data-sort-value="{{ row.current_score }}">{{ '%.1f'|format(row.current_score) }}</td>
+      <td class="{{ row.current_action }}">{{ row.current_action }}</td>
+      <td data-sort-value="{{ row.attack_count }}">{{ row.attack_count }}</td>
+      <td>{{ row.fingerprint_label }}</td><td><code>{{ row.fingerprint }}</code></td><td class="wrap">{{ row.attack_types }}</td>
+      <td data-sort-value="{{ row.first_seen }}">{{ '%.3f'|format(row.first_seen) }}</td><td data-sort-value="{{ row.last_seen }}">{{ '%.3f'|format(row.last_seen) }}</td>
+      <td data-sort-value="{{ row.highest_risk }}">{{ '%.1f'|format(row.highest_risk) }}</td>
+    </tr>{% else %}<tr><td colspan="11" class="empty">No attackers classified yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}
