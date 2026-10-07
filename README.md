@@ -60,7 +60,8 @@ All normal clients, including the ESP32, use the proxy at `PI_IP:1883`. The prox
 
 Edit only `config.env` for the gateway and Python tools. Comma-separated IP lists must not contain spaces unless those spaces are intended to be trimmed. Important fields:
 
-- `WHITELIST_IPS`: include `127.0.0.1` and the exact static `ESP32_IP`. These addresses always score zero.
+- `WHITELIST_IPS`: include `127.0.0.1` and the exact static `ESP32_IP`. These addresses ignore rate, volume, authentication, enumeration, and command-pattern scoring, but malformed packets and an explicit blacklist match still accumulate risk.
+- `WHITELIST_MAX_ANOMALY_SCORE`: caps the combined severe-signal score for a whitelisted address (default `40`), preserving availability while making protocol corruption or a contradictory blacklist entry visible.
 - `BLACKLIST_IPS`: gets the blacklist weight once on first sight.
 - `DECOY_FORCE_IPS`: optional demo safety switch; these addresses route directly to the decoy regardless of score. Leave it empty when demonstrating the complete score transition.
 - `MEDIUM=21`, `HIGH=41`, `CRITICAL=51`: throttle, restrict, and decoy boundaries.
@@ -238,7 +239,7 @@ The report covers detection/false-positive rates when labels exist, first high/c
 ## Example workflow
 
 1. Edit `config.env`, run the platform setup/start script, and open the SOC dashboard.
-2. Start `sim/sim_esp32.py` and verify its whitelisted score remains zero.
+2. Start `sim/sim_esp32.py` and verify normal whitelisted traffic remains at score zero; only malformed packets or an explicit blacklist match can raise it, up to `WHITELIST_MAX_ANOMALY_SCORE`.
 3. Run the authorized `attacker/attack.py`; watch the per-IP timeline and adaptive actions.
 4. Inspect `/api/attacker/<ip>`, `logs/alerts.log`, and the selected decoy profile/session.
 5. Run `analyze.py`, `evaluate.py`, and resource sampling; retain the resulting CSV/JSON as experiment evidence.

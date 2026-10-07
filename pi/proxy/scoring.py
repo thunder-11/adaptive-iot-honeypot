@@ -35,6 +35,7 @@ class ScoreConfig:
     publish_window: float = 10
     decay_per_second: float = 0.1
     whitelist: frozenset[str] = frozenset()
+    whitelist_max_anomaly_score: float = 40
     blacklist: frozenset[str] = frozenset()
     force_decoy: frozenset[str] = frozenset()
 
@@ -66,8 +67,6 @@ class RiskScorer:
         self.states: dict[str, IpState] = defaultdict(IpState)
 
     def score(self, ip: str, now: float | None = None) -> float:
-        if ip in self.config.whitelist:
-            return 0.0
         timestamp = self.clock() if now is None else now
         state = self.states[ip]
         if state.updated_at == 0.0:
@@ -77,12 +76,16 @@ class RiskScorer:
         state.updated_at = timestamp
         return state.score
 
-    def _add(self, ip: str, points: float, now: float | None = None) -> float:
-        if ip in self.config.whitelist:
-            return 0.0
+    def _add(self, ip: str, points: float, now: float | None = None,
+             *, allow_whitelist: bool = False) -> float:
         timestamp = self.clock() if now is None else now
-        self.score(ip, timestamp)
-        self.states[ip].score += points
+        current = self.score(ip, timestamp)
+        if ip in self.config.whitelist and not allow_whitelist:
+            return current
+        state = self.states[ip]
+        state.score += points
+        if ip in self.config.whitelist:
+            state.score = min(state.score, self.config.whitelist_max_anomaly_score)
         return self.states[ip].score
 
     def record_connection(self, ip: str, now: float | None = None) -> tuple[float, bool]:
@@ -154,7 +157,7 @@ class RiskScorer:
         return current, False
 
     def record_malformed(self, ip: str, now: float | None = None) -> float:
-        return self._add(ip, self.config.malformed_weight, now)
+        return self._add(ip, self.config.malformed_weight, now, allow_whitelist=True)
 
     def record_short_session(self, ip: str, now: float | None = None) -> tuple[float, float]:
         timestamp = self.clock() if now is None else now
@@ -189,25 +192,25 @@ class RiskScorer:
 
     def seed(self, ip: str, score: float, now: float | None = None) -> None:
         """Restore persisted current risk without restoring transient rate windows."""
-        if ip in self.config.whitelist:
-            return
         timestamp = self.clock() if now is None else now
         state = self.states[ip]
-        state.score = max(state.score, score)
+        restored = min(score, self.config.whitelist_max_anomaly_score) \
+            if ip in self.config.whitelist else score
+        state.score = max(state.score, restored)
         state.updated_at = timestamp
 
     def apply_blacklist(self, ip: str, now: float | None = None) -> tuple[float, bool]:
         timestamp = self.clock() if now is None else now
         current = self.score(ip, timestamp)
         state = self.states[ip]
-        if ip in self.config.whitelist or ip not in self.config.blacklist or state.blacklist_applied:
+        if ip not in self.config.blacklist or state.blacklist_applied:
             return current, False
         state.blacklist_applied = True
-        return self._add(ip, self.config.blacklist_weight, timestamp), True
+        return self._add(
+            ip, self.config.blacklist_weight, timestamp, allow_whitelist=True
+        ), True
 
     def action(self, ip: str, now: float | None = None) -> str:
-        if ip in self.config.whitelist:
-            return "allow"
         current = self.score(ip, now)
         if ip in self.config.force_decoy:
             return "decoy"

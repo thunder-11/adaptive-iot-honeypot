@@ -40,10 +40,9 @@ def current_risk(row: dict[str, object], config: dict[str, str]) -> dict[str, ob
     ip = str(row["ip"])
     score = float(row.get("current_score", row.get("score", 0.0)))
     seen = float(row.get("last_seen", row.get("time", time.time())))
+    score = max(0.0, score - (time.time() - seen) * number(config, "DECAY_POINTS_PER_SEC"))
     if ip in addresses(config, "WHITELIST_IPS"):
-        score = 0.0
-    else:
-        score = max(0.0, score - (time.time() - seen) * number(config, "DECAY_POINTS_PER_SEC"))
+        score = min(score, number(config, "WHITELIST_MAX_ANOMALY_SCORE"))
     action = "decoy" if ip in addresses(config, "DECOY_FORCE_IPS") else action_for_score(
         score, number(config, "MEDIUM"), number(config, "HIGH"), number(config, "CRITICAL")
     )

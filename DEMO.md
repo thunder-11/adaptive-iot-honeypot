@@ -164,7 +164,7 @@ Subscribe to `home/door/#`. Publish `lock` or `unlock` to `home/door/lock`. The 
 
 1. **Show the architecture:** point to port 1883 and say, “Every client sees one endpoint; the proxy decides whether its TCP stream reaches the real or decoy broker.”
 
-2. **Show normal operation:** move the sensor/button and show MQTT Explorer plus the relay. Say, “The ESP32 IP is explicitly whitelisted, so availability and control are preserved with score zero.”
+2. **Show normal operation:** move the sensor/button and show MQTT Explorer plus the relay. Say, “The ESP32 IP is explicitly whitelisted from rate and volume scoring, so normal availability and control are preserved; malformed traffic or an explicit blacklist match is still visible under the configured anomaly cap.”
 
 3. **Open the dashboard:** show the ESP32/phone action as `allow`. Say, “SQLite keeps the evidence while WAL mode lets the proxy and dashboard work concurrently.”
 

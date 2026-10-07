@@ -6,13 +6,19 @@ def config(**changes):
     return ScoreConfig(**values)
 
 
-def test_whitelist_always_zero():
-    scorer = RiskScorer(config(whitelist=frozenset({"good"})), clock=lambda: 1.0)
+def test_whitelist_ignores_volume_but_caps_severe_anomalies():
+    scorer = RiskScorer(config(
+        whitelist=frozenset({"good"}), blacklist=frozenset({"good"}),
+        whitelist_max_anomaly_score=40, decay_per_second=0,
+    ), clock=lambda: 1.0)
     scorer.record_wildcard("good")
     scorer.record_failed_auth("good")
     scorer.record_command_publish("good")
     assert scorer.score("good") == 0
-    assert scorer.action("good") == "allow"
+    assert scorer.apply_blacklist("good") == (30, True)
+    assert scorer.record_malformed("good") == 40
+    assert scorer.record_malformed("good") == 40
+    assert scorer.action("good") == "throttle"
 
 
 def test_linear_decay_and_thresholds():

@@ -62,6 +62,7 @@ def build_scorer(config: dict[str, str]) -> RiskScorer:
         publish_window=number(config, "PUBLISH_WINDOW_SEC"),
         decay_per_second=number(config, "DECAY_POINTS_PER_SEC"),
         whitelist=frozenset(addresses(config, "WHITELIST_IPS")),
+        whitelist_max_anomaly_score=number(config, "WHITELIST_MAX_ANOMALY_SCORE"),
         blacklist=frozenset(addresses(config, "BLACKLIST_IPS")),
         force_decoy=frozenset(addresses(config, "DECOY_FORCE_IPS")),
     ))
