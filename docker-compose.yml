@@ -8,9 +8,11 @@ services:
     networks: [honeynet]
   decoy-broker:
     image: eclipse-mosquitto:2
+    env_file: config.env
+    environment: {DECOY_BIND_IP: 0.0.0.0}
     volumes:
       - ./docker/mosquitto/decoy.conf:/mosquitto/config/decoy.conf:ro
-    command: ["mosquitto", "-c", "/mosquitto/config/decoy.conf"]
+    command: ["/bin/sh", "-c", "sed -e 's|@DECOY_PORT@|'\"$$DECOY_PORT\"'|g' -e 's|@DECOY_BIND_IP@|'\"$$DECOY_BIND_IP\"'|g' /mosquitto/config/decoy.conf > /tmp/decoy.conf && exec mosquitto -c /tmp/decoy.conf"]
     networks: [honeynet]
   proxy:
     build:

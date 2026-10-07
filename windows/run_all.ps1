@@ -30,7 +30,7 @@ if (@($portValues | Select-Object -Unique).Count -ne $portValues.Count) {
 }
 Assert-TcpPortAvailable '0.0.0.0' ([int]$Config.PROXY_PORT) 'inspection proxy'
 Assert-TcpPortAvailable '127.0.0.1' ([int]$Config.REAL_PORT) 'real broker'
-Assert-TcpPortAvailable '0.0.0.0' ([int]$Config.DECOY_PORT) 'decoy broker'
+Assert-TcpPortAvailable $Config.DECOY_BIND_IP ([int]$Config.DECOY_PORT) 'decoy broker'
 Assert-TcpPortAvailable '0.0.0.0' ([int]$Config.DASH_PORT) 'dashboard'
 
 $PasswordFile = Join-Path $Data 'real.passwd'

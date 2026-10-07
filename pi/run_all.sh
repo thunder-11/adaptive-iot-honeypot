@@ -26,7 +26,7 @@ fi
 
 sed -e "s|@REAL_PORT@|$REAL_PORT|g" -e "s|@PASSWORD_FILE@|$PASSWORD_FILE|g" \
   "$ROOT/pi/mosquitto/real.conf" > "$RUN/real.conf"
-sed -e "s|@DECOY_PORT@|$DECOY_PORT|g" \
+sed -e "s|@DECOY_PORT@|$DECOY_PORT|g" -e "s|@DECOY_BIND_IP@|$DECOY_BIND_IP|g" \
   "$ROOT/pi/mosquitto/decoy.conf" > "$RUN/decoy.conf"
 
 start_process() {

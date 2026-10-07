@@ -13,7 +13,7 @@ This mini project puts an inspecting MQTT proxy in front of a real IoT broker an
 - The proxy and brokers run on one Pi, so backend connections use `127.0.0.1`. Only values intended to vary are stored in `config.env`; broker templates are rendered from it into `run/`.
 - Live scores are checkpointed to SQLite and restored with elapsed-time decay when the proxy restarts. Transient rate windows still restart empty.
 - Failed-auth points are capped at 40 per source IP for the proxy lifetime. Scores themselves decay linearly.
-- The decoy broker is deliberately anonymous and listens on all interfaces as requested. Clients should still be told to use only port 1883; no firewall rules are changed.
+- The anonymous decoy broker binds to loopback by default and is reachable through the inspection proxy, not directly from the LAN.
 - Relay “locked/unlocked” is a demo abstraction. Adapt the mechanical fail-safe behavior to the actual lock before physical deployment.
 
 ## Architecture
@@ -32,7 +32,7 @@ This mini project puts an inspecting MQTT proxy in front of a real IoT broker an
               v
  +--------------------------+       +--------------------------+
  | decoy Mosquitto          |<------| fake-state publisher     |
- | 0.0.0.0:1885 anonymous  |       +--------------------------+
+ | 127.0.0.1:1885 anonymous|       +--------------------------+
  +--------------------------+
               |
        SQLite + Flask :5000
@@ -68,6 +68,7 @@ Edit only `config.env` for the gateway and Python tools. Comma-separated IP list
 - All `WEIGHT_*`, rate/window/limit, decay, and delay fields keep behavioral decisions explainable and configurable.
 - `SCORE_CHECKPOINT_SEC` controls how often live non-zero scores are persisted without creating synthetic evidence events.
 - `DECOY_PROFILE=auto|smart_lock|thermostat` selects the advertised fake device; `auto` uses the connecting client identifier when possible.
+- `DECOY_BIND_IP=127.0.0.1` keeps the native decoy broker off the LAN. Override it with the Pi's LAN address only for a controlled demo that intentionally needs direct decoy access; normal clients must use the proxy. Docker overrides it to `0.0.0.0` only inside the isolated Compose network.
 - `ALERT_*` enables cooldown-controlled JSON-line logging and an optional HTTP webhook for high/critical activity.
 - `REAL_USER`, `REAL_PASS`: used by the real broker, simulator, ESP32, phone, and legitimate CLI clients.
 - `TLS_CERT_PATH` and `TLS_KEY_PATH`: leave both empty for the existing plaintext classroom flow. Set both to PEM paths to terminate TLS on the client-facing proxy port; relative paths resolve from the repository root.

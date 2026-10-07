@@ -100,14 +100,15 @@ function Write-BrokerConfigs {
         [Parameter(Mandatory = $true)][hashtable]$Config
     )
 
-    Assert-ConfigKeys $Config @('REAL_PORT', 'DECOY_PORT')
+    Assert-ConfigKeys $Config @('REAL_PORT', 'DECOY_PORT', 'DECOY_BIND_IP')
     $run = Join-Path $Root 'run'
     $passwordFile = (Join-Path $Root 'data\real.passwd').Replace('\', '/')
     $realTemplate = Get-Content -Raw -LiteralPath (Join-Path $Root 'pi\mosquitto\real.conf')
     $decoyTemplate = Get-Content -Raw -LiteralPath (Join-Path $Root 'pi\mosquitto\decoy.conf')
     $real = $realTemplate.Replace('@REAL_PORT@', $Config.REAL_PORT).
         Replace('@PASSWORD_FILE@', $passwordFile)
-    $decoy = $decoyTemplate.Replace('@DECOY_PORT@', $Config.DECOY_PORT)
+    $decoy = $decoyTemplate.Replace('@DECOY_PORT@', $Config.DECOY_PORT).
+        Replace('@DECOY_BIND_IP@', $Config.DECOY_BIND_IP)
     Write-Utf8NoBom (Join-Path $run 'real.conf') $real
     Write-Utf8NoBom (Join-Path $run 'decoy.conf') $decoy
 }

@@ -36,7 +36,7 @@ Follow this checklist in order. Replace example network values with the values a
    nano config.env
    ```
 
-   Set `PI_IP=192.168.1.10`, `ESP32_IP=192.168.1.50`, strong matching `REAL_USER`/`REAL_PASS`, and `WHITELIST_IPS=127.0.0.1,192.168.1.50`. Leave `DECOY_FORCE_IPS=` empty for the full scoring demo. Save with Ctrl+O, Enter, Ctrl+X.
+   Set `PI_IP=192.168.1.10`, `ESP32_IP=192.168.1.50`, strong matching `REAL_USER`/`REAL_PASS`, and `WHITELIST_IPS=127.0.0.1,192.168.1.50`. Keep `DECOY_BIND_IP=127.0.0.1` so the decoy is reachable only through the proxy, and leave `DECOY_FORCE_IPS=` empty for the full scoring demo. Save with Ctrl+O, Enter, Ctrl+X.
 
 6. Install and configure everything (safe to rerun):
 
