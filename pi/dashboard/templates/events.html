@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Events{% endblock %}
 {% block content %}
-<header class="page-head"><div><div class="eyebrow">Evidence stream</div><h1>Events</h1><span class="muted">Live scoring signals and adaptive responses.</span></div><div class="toolbar"><a class="button" href="{{ url_for('export_events_csv') }}">Export CSV</a><button class="button danger" id="clear-logs" type="button">Clear logs</button><span class="status-line">Refresh 3s · <span id="visible-count">{{ events|length }}</span> visible</span></div></header>
+<header class="page-head"><div><div class="eyebrow">Evidence stream</div><h1>Events</h1><span class="muted">Live scoring signals and adaptive responses.</span></div><div class="toolbar"><a class="button" href="{{ url_for('export_events_csv') }}">Events CSV</a><a class="button" href="{{ url_for('export_evidence_zip') }}">Full evidence ZIP</a><button class="button danger" id="clear-logs" type="button">Clear logs + scores</button><span class="status-line">Refresh 3s · <span id="visible-count">{{ events|length }}</span> visible</span></div></header>
 <section class="panel">
   <div class="filters">
     <div class="filter"><label for="risk-filter">Risk</label><select id="risk-filter"><option value="">All risks</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div>
@@ -47,7 +47,7 @@
     };
     riskFilter.addEventListener("change", applyFilters); actionFilter.addEventListener("change", applyFilters);
     clearButton.addEventListener("click", async () => {
-      if (!confirm("Clear all recorded attack events, sessions, attackers, decoy messages, and alert logs? The current physical-device state will be kept.")) return;
+      if (!confirm("Clear all recorded attack events, sessions, attackers, decoy messages, alert logs, and live risk scores? The current physical-device state will be kept.")) return;
       clearButton.disabled = true;
       try {
         const response = await fetch("{{ url_for('clear_logs') }}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "clear" }) });

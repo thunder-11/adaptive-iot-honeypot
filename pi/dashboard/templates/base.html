@@ -101,7 +101,7 @@
     @media (max-width: 860px) {
       .shell { grid-template-columns: 1fr; }
       .sidebar { position: static; height: auto; padding: .8rem; flex-direction: row; flex-wrap: wrap; align-items: center; gap: .7rem; border-right: 0; border-bottom: 1px solid var(--line); }
-      .brand { margin-right: auto; } .nav-links { order: 3; width: 100%; grid-template-columns: repeat(4, 1fr); }
+      .brand { margin-right: auto; } .nav-links { order: 3; width: 100%; grid-template-columns: repeat(5, 1fr); }
       .nav-links a { text-align: center; border-left: 0; border-bottom: 3px solid transparent; }
       .nav-links a.active { border-bottom-color: var(--accent-strong); }
       .sidebar-foot { margin: 0; } .theme-toggle { width: auto; } .main { padding: 1rem; }
@@ -118,6 +118,7 @@
         <a href="{{ url_for('index') }}" {% if request.endpoint == 'index' %}class="active" aria-current="page"{% endif %}>Overview</a>
         <a href="{{ url_for('attackers_page') }}" {% if request.endpoint in ('attackers_page', 'attacker_page') %}class="active" aria-current="page"{% endif %}>Attackers</a>
         <a href="{{ url_for('events_page') }}" {% if request.endpoint == 'events_page' %}class="active" aria-current="page"{% endif %}>Events</a>
+        <a href="{{ url_for('alerts_page') }}" {% if request.endpoint == 'alerts_page' %}class="active" aria-current="page"{% endif %}>Alerts</a>
         <a href="{{ url_for('sessions_page') }}" {% if request.endpoint == 'sessions_page' %}class="active" aria-current="page"{% endif %}>Sessions</a>
       </nav>
       <div class="sidebar-foot sidebar-actions">

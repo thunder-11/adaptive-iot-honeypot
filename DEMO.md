@@ -4,7 +4,7 @@ Follow this checklist in order. Replace example network values with the values a
 
 ## A. Raspberry Pi
 
-1. In Raspberry Pi Imager, choose Raspberry Pi OS Lite (64-bit). In advanced settings, set a hostname, username/password, Wi-Fi, locale, and **Enable SSH with password authentication**. Flash and boot the card.
+1. For a Raspberry Pi 3 kit, first follow [the Pi 3 guide](pi/README_PI3.md). In Raspberry Pi Imager select your exact board and choose Raspberry Pi OS Lite (32-bit recommended for Pi 3; 64-bit also works), Bookworm or newer with Python 3.11+. Set a hostname, your own username/password, Wi-Fi, locale, and enable SSH. Pi 3 B needs 2.4 GHz Wi-Fi. Flash and boot the card.
 
 2. Find the Pi in the router/hotspot client list and connect:
 
@@ -22,10 +22,11 @@ Follow this checklist in order. Replace example network values with the values a
 
    Expected: SSH briefly disconnects; reconnect to `192.168.1.10`. If your hotspot uses another subnet, use that subnet instead.
 
-4. From the laptop, copy the repository, then reconnect:
+4. From the laptop, copy the gateway source without the Windows virtual environment or old runtime state, then reconnect (run the first two commands from the repository root on the laptop):
 
    ```bash
-   scp -r adaptive-iot-honeypot <pi-user>@192.168.1.10:~/
+   ssh <pi-user>@192.168.1.10 "mkdir -p ~/adaptive-iot-honeypot"
+   scp -r pi sim attacker tests config.env requirements.txt pytest.ini README.md DEMO.md <pi-user>@192.168.1.10:~/adaptive-iot-honeypot/
    ssh <pi-user>@192.168.1.10
    cd ~/adaptive-iot-honeypot
    ```

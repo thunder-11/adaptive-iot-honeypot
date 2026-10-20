@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import json
+import time
 from pathlib import Path
 from typing import Iterable
 
@@ -60,6 +61,17 @@ CREATE TABLE IF NOT EXISTS device_state (
     locked INTEGER NOT NULL,
     led_on INTEGER NOT NULL,
     source TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS system_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cloud_status (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_attempt REAL NOT NULL,
+    last_success REAL,
+    entry_id TEXT NOT NULL DEFAULT '',
+    error TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -221,8 +233,38 @@ def update_device_state(time_value: float, ip: str, locked: bool, led_on: bool,
 
 
 def clear_evidence(path: Path = DEFAULT_DB) -> None:
-    """Clear recorded security evidence without changing live device state."""
+    """Clear evidence and request a reset of the proxy's in-memory scores."""
     with connect(path) as connection:
         for table in ("events", "sessions", "decoy_messages", "attackers"):
             connection.execute(f"DELETE FROM {table}")
+        connection.execute(
+            """INSERT INTO system_state(key, value) VALUES ('score_reset', ?)
+               ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+            (str(time.time_ns()),),
+        )
+
+
+def system_state(key: str, path: Path = DEFAULT_DB) -> str:
+    values = rows("SELECT value FROM system_state WHERE key = ?", (key,), path)
+    return str(values[0]["value"]) if values else ""
+
+
+def update_cloud_status(success: bool, message: str, time_value: float,
+                        path: Path = DEFAULT_DB) -> None:
+    """Persist the latest ThingSpeak result for dashboard/demo verification."""
+    with connect(path) as connection:
+        previous = connection.execute(
+            "SELECT last_success, entry_id FROM cloud_status WHERE id = 1"
+        ).fetchone()
+        last_success = time_value if success else (previous[0] if previous else None)
+        entry_id = message if success else (str(previous[1]) if previous else "")
+        error = "" if success else message[:500]
+        connection.execute(
+            """INSERT INTO cloud_status(id, last_attempt, last_success, entry_id, error)
+               VALUES (1, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET last_attempt=excluded.last_attempt,
+                 last_success=excluded.last_success, entry_id=excluded.entry_id,
+                 error=excluded.error""",
+            (time_value, last_success, entry_id, error),
+        )
 

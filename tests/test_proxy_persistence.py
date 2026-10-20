@@ -51,3 +51,16 @@ def test_tls_context_is_optional_and_loads_configured_paths(monkeypatch):
     assert loaded["paths"] == (
         proxy_module.ROOT / "data/demo-cert.pem", proxy_module.ROOT / "data/demo-key.pem",
     )
+
+
+def test_dashboard_reset_request_clears_live_proxy_scores(monkeypatch):
+    marker = {"value": "before"}
+    monkeypatch.setattr(proxy_module.db, "system_state", lambda _key: marker["value"])
+    monkeypatch.setattr(proxy_module.db, "restore_scores", lambda: [])
+    proxy = proxy_module.Proxy(load_config())
+    proxy.scorer.seed("10.0.0.9", 60)
+    assert proxy.scorer.score("10.0.0.9") > 0
+    marker["value"] = "after"
+    assert proxy._apply_control_requests()
+    assert proxy.scorer.score("10.0.0.9") == 0
+    assert not proxy._apply_control_requests()

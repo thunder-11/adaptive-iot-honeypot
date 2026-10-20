@@ -1,5 +1,9 @@
 # Adaptive IoT Honeypot with Risk-Based Traffic Redirection
 
+For device-by-device commands, first-time setup, daily startup, and Windows
+fallbacks with either the real ESP32 or a simulator, use the
+[complete startup guide](STARTUP_GUIDE.md).
+
 This mini project puts an inspecting MQTT proxy in front of a real IoT broker and a decoy broker. Explainable behavioral signals raise a persistent per-IP score: low risk reaches the real device, medium risk is throttled, high risk is restricted, and critical risk reconnects to a safe decoy. The same project runs with a simulated ESP32 when no hardware is available.
 
 > Use `attacker/attack.py` only on a network and systems you own or are explicitly authorized to test.
@@ -77,12 +81,20 @@ After changing credentials, rerun `pi/setup_pi.sh` on Linux/Pi or `windows/setup
 
 ## Raspberry Pi quick start
 
+**Using a Raspberry Pi 3 kit:** follow [the Pi 3 first-boot guide](pi/README_PI3.md)
+for OS selection, power/network setup, Windows-to-Pi transfer, diagnostics and
+on-board acceptance checks. Use Raspberry Pi OS Lite (32-bit recommended for the
+small memory budget, or 64-bit), Bookworm or newer with Python 3.11+. Run natively.
+The proxy defaults to 32 concurrent clients and a 15-second CONNECT deadline;
+startup checks prerequisites and waits for each service before reporting success.
+
 ```bash
 cp -r adaptive-iot-honeypot ~/adaptive-iot-honeypot
 cd ~/adaptive-iot-honeypot
 nano config.env
 bash pi/setup_pi.sh
 bash pi/run_all.sh
+.venv/bin/python pi/check_pi.py --running
 ```
 
 Expected last line:
@@ -154,7 +166,7 @@ Open the Pi dashboard, replacing the example with the actual Pi IP:
 http://192.168.1.10:5000
 ```
 
-Also open the ThingSpeak channel's **Private View**. On the dashboard, click **Desktop alerts: enable** and allow browser notifications.
+Also open the ThingSpeak channel's **Private View**. The dashboard has a persistent **Alerts** page for medium, high, and critical activity. Click **Desktop alerts: enable** and allow browser notifications for system pop-ups as well.
 
 ### 6. Raspberry Pi, Terminal 2 — monitor real MQTT traffic
 
@@ -245,7 +257,7 @@ Keep `127.0.0.2` out of `WHITELIST_IPS`.
 
 ### 11. Windows laptop, browser — export or clear evidence
 
-Open the dashboard's **Events** page. Click **Export CSV** to download `honeypot-attack-events.csv`. Click **Clear logs** only after saving required evidence. To reset both stored logs and the proxy's in-memory scores for a completely fresh demonstration, clear the logs and then restart the Pi stack.
+Open the dashboard's **Events** page. Click **Events CSV** to download `honeypot-attack-events.csv`, or **Full evidence ZIP** to download separate CSV files for events, attackers, sessions, decoy messages, real-device state, and ThingSpeak delivery status plus the JSON-lines alert log. Click **Clear logs + scores** only after saving required evidence. The proxy detects this request and clears its live in-memory risk scores within approximately one second; the trusted physical-device/LED state is retained.
 
 ### 12. Raspberry Pi, any terminal — stop or restart
 
@@ -341,7 +353,7 @@ Unit tests cover all scoring signals, four adaptive levels, caps, decay, whiteli
 
 The multi-page dashboard at `http://PI_IP:5000` has a persistent SOC navigation rail and a light/dark theme toggle that follows the system preference initially and remembers the operator's selection. Overview and Events update every three seconds without a full-page refresh.
 
-The Events page can export the complete evidence stream as a spreadsheet-safe CSV and can clear recorded events, sessions, attacker summaries, decoy messages, and the JSON alert log after confirmation. Clearing logs does not erase the latest trusted physical-device state. Because the proxy owns live in-memory scores, restart the stack as well when a completely fresh scoring demonstration is required.
+The Events page can export either the event stream as a spreadsheet-safe CSV or a complete ZIP evidence bundle. It can clear recorded events, sessions, attacker summaries, decoy messages, the JSON alert log, and the proxy's live in-memory scores after confirmation. Clearing logs does not erase the latest trusted physical-device state.
 
 Medium, high, and critical activity creates an in-dashboard alert on every page with the default `ALERT_MIN_ACTION=throttle`. Use **Desktop alerts: enable** once to grant browser notification permission. `ALERT_WEBHOOK_URL` remains available for sending the same cooldown-controlled JSON alert to an external notification service.
 
@@ -356,7 +368,7 @@ Create a ThingSpeak channel with these numeric fields:
 5. Adaptive action (`0` allow, `1` throttle, `2` restrict, `3` decoy)
 6. Event points
 
-Then set `THINGSPEAK_ENABLED=true`, `THINGSPEAK_WRITE_API_KEY=<channel write key>`, and optionally `THINGSPEAK_CHANNEL_ID=<channel id>` in `config.env`. Restart the stack. Uploads are performed by the proxy in a background thread and coalesced to ThingSpeak's 15-second minimum interval, so cloud outages never block MQTT traffic. Telemetry fields 1–3 are accepted only from a whitelisted client routed to the real broker; decoy commands therefore cannot falsify the displayed physical state.
+Then set `THINGSPEAK_ENABLED=true`, `THINGSPEAK_WRITE_API_KEY=<channel write key>`, and optionally `THINGSPEAK_CHANNEL_ID=<channel id>` in `config.env`. Restart the stack. Uploads are performed by the proxy in a background thread and coalesced to ThingSpeak's 15-second minimum interval, so cloud outages never block MQTT traffic. The Overview page reports `waiting for first upload`, the stored ThingSpeak entry number, or the latest delivery error. Telemetry fields 1–3 are accepted only from a whitelisted client routed to the real broker; decoy commands therefore cannot falsify the displayed physical state.
 
 ### External LED demonstration
 

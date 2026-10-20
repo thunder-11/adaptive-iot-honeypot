@@ -95,9 +95,19 @@ class Proxy:
         self.config = config
         self.scorer = build_scorer(config)
         self.alerts = AlertManager(config, ROOT)
-        self.thingspeak = ThingSpeakClient(config)
+        self.thingspeak = ThingSpeakClient(
+            config, on_result=lambda success, message: db.update_cloud_status(
+                success, message, time.time()
+            )
+        )
         self.connections: dict[str, set[asyncio.StreamWriter]] = defaultdict(set)
         self.server: asyncio.Server | None = None
+        self.max_connections = int(config.get("MAX_CONNECTIONS", "32"))
+        self.connect_timeout = float(config.get("CONNECT_TIMEOUT_SEC", "15"))
+        if self.max_connections < 1 or self.connect_timeout <= 0:
+            raise ValueError("MAX_CONNECTIONS and CONNECT_TIMEOUT_SEC must be positive")
+        self.active_connections = 0
+        self._score_reset_marker = db.system_state("score_reset")
         self._restore_scores()
 
     def _restore_scores(self) -> None:
@@ -122,6 +132,21 @@ class Proxy:
         while True:
             await asyncio.sleep(interval)
             self._checkpoint_scores()
+
+    async def _control_loop(self) -> None:
+        """Apply dashboard control requests without coupling dashboard and proxy processes."""
+        while True:
+            await asyncio.sleep(0.5)
+            self._apply_control_requests()
+
+    def _apply_control_requests(self) -> bool:
+        marker = db.system_state("score_reset")
+        if marker == self._score_reset_marker:
+            return False
+        self.scorer.states.clear()
+        self._score_reset_marker = marker
+        LOGGER.info("cleared all in-memory risk scores by dashboard request")
+        return True
 
     def log_event(self, ip: str, detail: str, *, signal: str = "", points: float = 0.0,
                   started_at: float | None = None) -> float:
@@ -187,17 +212,24 @@ class Proxy:
         )
         LOGGER.info("proxy listening on %s://0.0.0.0:%d", "mqtts" if tls else "mqtt", port)
         checkpoint_task = asyncio.create_task(self._checkpoint_loop())
+        control_task = asyncio.create_task(self._control_loop())
         try:
             async with self.server:
                 await self.server.serve_forever()
         finally:
             checkpoint_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await checkpoint_task
+            control_task.cancel()
+            for background_task in (checkpoint_task, control_task):
+                with suppress(asyncio.CancelledError):
+                    await background_task
             self._checkpoint_scores()
 
     async def handle_client(self, reader: asyncio.StreamReader,
                             writer: asyncio.StreamWriter) -> None:
+        if self.active_connections >= self.max_connections:
+            writer.close()
+            return
+        self.active_connections += 1
         peer = writer.get_extra_info("peername")
         ip = str(peer[0]) if peer else "unknown"
         connection_started = time.monotonic()
@@ -216,7 +248,9 @@ class Proxy:
         backend_writer: asyncio.StreamWriter | None = None
         session_id: int | None = None
         try:
-            connect_packet, info, following_packets, partial_tail = await self.read_connect(reader)
+            connect_packet, info, following_packets, partial_tail = await asyncio.wait_for(
+                self.read_connect(reader), timeout=self.connect_timeout
+            )
             inspect = info.protocol_name == "MQTT" and info.protocol_level == 4
             if not inspect:
                 LOGGER.warning("ip=%s protocol=%s/%s forwarded without inspection", ip,
@@ -248,11 +282,19 @@ class Proxy:
                     if await self.inspect_client_packet(packet, ip, backend):
                         backend_writer.write(packet)
                         await backend_writer.drain()
-            await asyncio.gather(
+            pipes = [asyncio.create_task(coro) for coro in (
                 self.pipe_client(reader, backend_writer, ip, backend, inspect, partial_tail),
                 self.pipe_backend(backend_reader, writer, ip, backend),
-            )
-        except (asyncio.IncompleteReadError, ConnectionError):
+            )]
+            try:
+                done, _ = await asyncio.wait(pipes, return_when=asyncio.FIRST_COMPLETED)
+                for pipe in done:
+                    pipe.result()
+            finally:
+                for pipe in pipes:
+                    pipe.cancel()
+                await asyncio.gather(*pipes, return_exceptions=True)
+        except (asyncio.IncompleteReadError, ConnectionError, asyncio.TimeoutError):
             LOGGER.debug("connection ended for %s", ip)
         except (MQTTParseError, ValueError) as exc:
             LOGGER.warning("closing malformed connection from %s: %s", ip, exc)
@@ -265,7 +307,10 @@ class Proxy:
             LOGGER.exception("connection handler failed for %s", ip)
             self.log_event(ip, "internal connection error")
         finally:
+            self.active_connections -= 1
             self.connections[ip].discard(writer)
+            if not self.connections[ip]:
+                del self.connections[ip]
             if session_id is not None:
                 db.end_session(session_id, time.time())
             duration = time.monotonic() - connection_started
@@ -422,11 +467,10 @@ async def main() -> None:
     proxy = Proxy(load_config())
     loop = asyncio.get_running_loop()
     task = asyncio.create_task(proxy.start())
-    stop = asyncio.Event()
     for name in ("SIGINT", "SIGTERM"):
         if hasattr(signal, name):
             try:
-                loop.add_signal_handler(getattr(signal, name), stop.set)
+                loop.add_signal_handler(getattr(signal, name), task.cancel)
             except NotImplementedError:  # Windows event loops do not support this API.
                 pass
     try:

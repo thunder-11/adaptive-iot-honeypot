@@ -8,6 +8,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
+from collections.abc import Callable
 
 from pi.config import boolean
 
@@ -17,7 +18,8 @@ LOGGER = logging.getLogger("thingspeak")
 class ThingSpeakClient:
     """Coalesce telemetry into the latest field values and upload in the background."""
 
-    def __init__(self, config: Mapping[str, str]):
+    def __init__(self, config: Mapping[str, str],
+                 on_result: Callable[[bool, str], None] | None = None):
         self.write_key = config.get("THINGSPEAK_WRITE_API_KEY", "").strip()
         self.enabled = boolean(config, "THINGSPEAK_ENABLED") and bool(self.write_key)
         self.url = config.get("THINGSPEAK_UPDATE_URL", "https://api.thingspeak.com/update").strip()
@@ -26,6 +28,7 @@ class ThingSpeakClient:
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._last_sent = 0.0
+        self._on_result = on_result
         if self.enabled:
             threading.Thread(target=self._worker, name="thingspeak-uploader", daemon=True).start()
 
@@ -63,8 +66,19 @@ class ThingSpeakClient:
                     result = response.read(32).decode("ascii", errors="replace").strip()
                 if result == "0":
                     LOGGER.warning("ThingSpeak rejected an update (response 0)")
+                    self._report(False, "ThingSpeak rejected update (response 0)")
                 else:
                     LOGGER.info("ThingSpeak update stored as entry %s", result)
+                    self._report(True, result)
             except Exception as exc:  # Cloud telemetry must never interrupt MQTT forwarding.
                 LOGGER.error("ThingSpeak update failed: %s", exc)
+                self._report(False, str(exc))
             self._last_sent = time.monotonic()
+
+    def _report(self, success: bool, message: str) -> None:
+        if not self._on_result:
+            return
+        try:
+            self._on_result(success, message)
+        except Exception as exc:
+            LOGGER.error("could not record ThingSpeak result: %s", exc)

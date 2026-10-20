@@ -8,6 +8,7 @@ import io
 import json
 import sys
 import time
+import zipfile
 from collections import Counter
 from pathlib import Path
 
@@ -68,6 +69,22 @@ def attacker_rows() -> list[dict[str, object]]:
     return [current_risk(row, config) for row in values]
 
 
+def alert_actions() -> list[str]:
+    minimum = load_config().get("ALERT_MIN_ACTION", "restrict")
+    return [name for name, rank in ACTION_ORDER.items()
+            if rank >= ACTION_ORDER.get(minimum, ACTION_ORDER["restrict"])]
+
+
+def alert_rows(limit: int = 100) -> list[dict[str, object]]:
+    actions = alert_actions()
+    placeholders = ",".join("?" for _ in actions)
+    return query(
+        f"SELECT rowid, * FROM events WHERE action IN ({placeholders}) "
+        "ORDER BY rowid DESC LIMIT ?",
+        (*actions, limit),
+    )
+
+
 def stats_payload() -> dict[str, object]:
     config = load_config()
     attackers = attacker_rows()
@@ -84,6 +101,7 @@ def stats_payload() -> dict[str, object]:
     first_seen = {str(row["ip"]): float(row["first_seen"]) for row in attackers}
     response_latencies = first_high_critical_latencies(response_events, first_seen)
     device_rows = query("SELECT * FROM device_state WHERE id = 1")
+    cloud_rows = query("SELECT * FROM cloud_status WHERE id = 1")
     return {
         "total_attackers": len(attackers),
         "high_critical": sum(1 for row in attackers if row["risk_level"] in {"HIGH", "CRITICAL"}),
@@ -98,6 +116,7 @@ def stats_payload() -> dict[str, object]:
             "samples": len(response_latencies),
         },
         "device_state": device_rows[0] if device_rows else None,
+        "thingspeak_status": cloud_rows[0] if cloud_rows else None,
         "thingspeak_enabled": config.get("THINGSPEAK_ENABLED", "false").lower()
         in {"1", "true", "yes", "on"} and bool(config.get("THINGSPEAK_WRITE_API_KEY", "").strip()),
         "generated_at": time.time(),
@@ -144,6 +163,11 @@ def events_page() -> str:
     return render_template("events.html", events=events)
 
 
+@app.get("/alerts")
+def alerts_page() -> str:
+    return render_template("alerts.html", alerts=alert_rows())
+
+
 @app.get("/sessions")
 def sessions_page() -> str:
     sessions = query("SELECT rowid, * FROM sessions ORDER BY start DESC LIMIT 100")
@@ -169,9 +193,7 @@ def api_events():
 def api_alerts():
     """Return newly recorded high-severity events for dashboard notifications."""
     after = bounded_nonnegative("after")
-    minimum = load_config().get("ALERT_MIN_ACTION", "restrict")
-    actions = [name for name, rank in ACTION_ORDER.items()
-               if rank >= ACTION_ORDER.get(minimum, ACTION_ORDER["restrict"])]
+    actions = alert_actions()
     placeholders = ",".join("?" for _ in actions)
     cursor_rows = query("SELECT COALESCE(MAX(rowid), 0) AS cursor FROM events")
     cursor = int(cursor_rows[0]["cursor"])
@@ -189,10 +211,24 @@ def api_alerts():
                     "events": events})
 
 
+@app.get("/api/alerts/history")
+def api_alert_history():
+    return jsonify(alert_rows(bounded_limit()))
+
+
 def spreadsheet_safe(value: object) -> object:
     if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
         return "'" + value
     return value
+
+
+def csv_bytes(columns: tuple[str, ...], records: list[dict[str, object]]) -> bytes:
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(columns)
+    for row in records:
+        writer.writerow([spreadsheet_safe(row.get(column, "")) for column in columns])
+    return output.getvalue().encode("utf-8-sig")
 
 
 @app.get("/api/events/export.csv")
@@ -209,6 +245,54 @@ def export_events_csv():
     return Response(
         output.getvalue(), mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=honeypot-attack-events.csv"},
+    )
+
+
+@app.get("/api/evidence/export.zip")
+def export_evidence_zip():
+    """Export a complete, portable evidence bundle for the project demonstration."""
+    action_risks = {"allow": "LOW", "throttle": "MEDIUM", "restrict": "HIGH", "decoy": "CRITICAL"}
+    event_rows = query("SELECT rowid, * FROM events ORDER BY time")
+    for row in event_rows:
+        row["risk"] = action_risks.get(str(row["action"]), "")
+    datasets = {
+        "events.csv": (
+            ("rowid", "time", "ip", "risk", "category", "signal", "points", "score",
+             "action", "detail", "response_latency_ms"), event_rows,
+        ),
+        "attackers.csv": (
+            ("ip", "first_seen", "last_seen", "attack_count", "highest_risk",
+             "current_score", "current_action", "attack_types", "fingerprint",
+             "fingerprint_label"),
+            query("SELECT * FROM attackers ORDER BY first_seen"),
+        ),
+        "sessions.csv": (
+            ("rowid", "ip", "backend", "start", "end", "profile"),
+            query("SELECT rowid, * FROM sessions ORDER BY start"),
+        ),
+        "decoy_messages.csv": (
+            ("rowid", "time", "ip", "topic", "payload"),
+            query("SELECT rowid, * FROM decoy_messages ORDER BY time"),
+        ),
+        "device_state.csv": (
+            ("time", "ip", "locked", "led_on", "source"),
+            query("SELECT time, ip, locked, led_on, source FROM device_state"),
+        ),
+        "thingspeak_status.csv": (
+            ("last_attempt", "last_success", "entry_id", "error"),
+            query("SELECT last_attempt, last_success, entry_id, error FROM cloud_status"),
+        ),
+    }
+    archive_buffer = io.BytesIO()
+    with zipfile.ZipFile(archive_buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for filename, (columns, records) in datasets.items():
+            archive.writestr(filename, csv_bytes(columns, records))
+        alert_path = ROOT / load_config().get("ALERT_LOG_FILE", "logs/alerts.log")
+        if alert_path.is_file():
+            archive.writestr("alerts.jsonl", alert_path.read_bytes())
+    return Response(
+        archive_buffer.getvalue(), mimetype="application/zip",
+        headers={"Content-Disposition": "attachment; filename=honeypot-evidence.zip"},
     )
 
 
