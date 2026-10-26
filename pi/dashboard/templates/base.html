@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -8,185 +8,54 @@
       let theme;
       try { theme = localStorage.getItem("soc-theme"); } catch (_) { /* storage may be disabled */ }
       if (theme !== "light" && theme !== "dark") {
-        theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        theme = "light";
       }
       document.documentElement.dataset.theme = theme;
     })();
   </script>
+  <script src="{{ url_for('static', filename='runtime.js') }}"></script>
   <title>{% block title %}Overview{% endblock %} · Adaptive IoT Honeypot SOC</title>
-  <style>
-    :root {
-      color-scheme: dark;
-      --bg: #0b1020; --nav-bg: #0e1628; --surface: #121d31; --surface-raised: #17243a;
-      --line: #2a3a55; --line-strong: #405473; --text: #e8edf5; --text-strong: #f8fafc;
-      --muted: #93a4bd; --accent: #7dd3fc; --accent-strong: #38bdf8; --accent-soft: #173b55;
-      --low: #86efac; --medium: #fde047; --high: #fb923c; --critical: #f87171;
-      --code: #c4b5fd; --focus: #bae6fd; --shadow: #050812;
-    }
-    :root[data-theme="light"] {
-      color-scheme: light;
-      --bg: #e8f0f7; --nav-bg: #dce9f3; --surface: #f5f9fc; --surface-raised: #edf5fa;
-      --line: #b8cad9; --line-strong: #829bb0; --text: #15243a; --text-strong: #08172b;
-      --muted: #526b81; --accent: #075985; --accent-strong: #0369a1; --accent-soft: #c9e8f6;
-      --low: #16723a; --medium: #806500; --high: #a23f08; --critical: #b4232d;
-      --code: #6741a5; --focus: #0c4a6e; --shadow: #9eb1c2;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; }
-    a { color: var(--accent); } a:hover { color: var(--accent-strong); }
-    button, select { font: inherit; }
-    button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-    .shell { min-height: 100vh; display: grid; grid-template-columns: 218px minmax(0, 1fr); }
-    .sidebar { position: sticky; top: 0; height: 100vh; padding: 1.15rem .85rem; background: var(--nav-bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 1.2rem; }
-    .brand { color: var(--text-strong); text-decoration: none; line-height: 1.2; }
-    .brand-mark { display: block; color: var(--accent); font: 700 .72rem ui-monospace, monospace; letter-spacing: .14em; }
-    .brand-name { display: block; margin-top: .3rem; font-weight: 750; }
-    .nav-links { display: grid; gap: .25rem; }
-    .nav-links a { padding: .55rem .65rem; border-left: 3px solid transparent; color: var(--muted); text-decoration: none; font: 600 .86rem ui-monospace, monospace; }
-    .nav-links a:hover { background: var(--surface); color: var(--text); }
-    .nav-links a.active { border-left-color: var(--accent-strong); background: var(--accent-soft); color: var(--accent); }
-    .sidebar-foot { margin-top: auto; }
-    .theme-toggle { width: 100%; padding: .55rem .65rem; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; font: 600 .78rem ui-monospace, monospace; }
-    .sidebar-actions { display: grid; gap: .4rem; }
-    .button { display: inline-flex; align-items: center; justify-content: center; padding: .48rem .7rem; border: 1px solid var(--line-strong); background: var(--surface-raised); color: var(--text); cursor: pointer; text-decoration: none; font: 600 .76rem ui-monospace, monospace; }
-    .button:hover { color: var(--text-strong); border-color: var(--accent); }
-    .button.danger { color: var(--critical); }
-    .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-    .toast-stack { position: fixed; z-index: 20; right: 1rem; top: 1rem; display: grid; gap: .5rem; width: min(26rem, calc(100vw - 2rem)); }
-    .toast { padding: .8rem .9rem; border: 1px solid var(--critical); background: var(--surface); box-shadow: 0 5px 20px var(--shadow); font: .78rem ui-monospace, monospace; }
-    .toast strong { display: block; margin-bottom: .25rem; color: var(--critical); }
-    .device-state { display: flex; align-items: center; gap: .8rem; }
-    .led { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #475569; box-shadow: 0 0 0 3px var(--line); }
-    .led.on { background: #22c55e; box-shadow: 0 0 12px #22c55e; }
-    .main { min-width: 0; padding: 1.35rem 1.55rem 2rem; }
-    .page-head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
-    h1, h2, h3 { margin-top: 0; color: var(--text-strong); }
-    h1 { margin-bottom: .25rem; font-size: 1.45rem; }
-    h2 { margin-bottom: .75rem; font-size: .9rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); }
-    h3 { margin-bottom: .4rem; font-size: .9rem; }
-    p { line-height: 1.5; }
-    .muted { color: var(--muted); }
-    .mono, code, th, td, .eyebrow { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    code { color: var(--code); }
-    .eyebrow { color: var(--muted); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; }
-    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: .85rem; }
-    .stat { background: var(--surface); padding: .85rem 1rem; }
-    .stat strong { display: block; margin-top: .25rem; color: var(--text-strong); font: 700 1.65rem ui-monospace, monospace; }
-    .panel { min-width: 0; margin-bottom: .85rem; padding: .9rem 1rem; background: var(--surface); border: 1px solid var(--line); overflow: auto; box-shadow: 0 1px 2px var(--shadow); }
-    .distribution { display: grid; gap: .58rem; }
-    .distribution-row { display: grid; grid-template-columns: minmax(8rem, auto) 3rem 1fr; align-items: center; gap: .65rem; font: .8rem ui-monospace, monospace; }
-    .track { height: .48rem; background: var(--surface-raised); border: 1px solid var(--line); }
-    .bar { display: block; min-width: 2px; height: 100%; background: var(--accent-strong); }
-    .LOW, .allow { color: var(--low); } .MEDIUM, .throttle { color: var(--medium); }
-    .HIGH, .restrict { color: var(--high); } .CRITICAL, .decoy { color: var(--critical); }
-    .risk-bar.LOW { background: var(--low); } .risk-bar.MEDIUM { background: var(--medium); }
-    .risk-bar.HIGH { background: var(--high); } .risk-bar.CRITICAL { background: var(--critical); }
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: .76rem; }
-    th, td { padding: .42rem .5rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
-    th { position: sticky; top: 0; z-index: 1; background: var(--surface-raised); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-    th[data-sort] { cursor: pointer; user-select: none; } th[data-sort]::after { content: " ↕"; color: var(--line-strong); }
-    tbody tr:hover { background: var(--surface-raised); }
-    td.wrap { min-width: 16rem; white-space: normal; line-height: 1.35; }
-    .filters { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
-    .filter { display: grid; gap: .25rem; }
-    .filter label { color: var(--muted); font: .68rem ui-monospace, monospace; text-transform: uppercase; }
-    select { min-width: 10rem; padding: .38rem .5rem; border: 1px solid var(--line-strong); background: var(--surface-raised); color: var(--text); }
-    .status-line { font: .72rem ui-monospace, monospace; color: var(--muted); }
-    .identity { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: .85rem; }
-    .identity-item { padding: .7rem .8rem; background: var(--surface); }
-    .identity-item strong { display: block; margin-top: .22rem; font: 600 .82rem ui-monospace, monospace; overflow-wrap: anywhere; }
-    .empty { padding: 1rem .5rem; color: var(--muted); font-style: italic; }
-    @media (max-width: 860px) {
-      .shell { grid-template-columns: 1fr; }
-      .sidebar { position: static; height: auto; padding: .8rem; flex-direction: row; flex-wrap: wrap; align-items: center; gap: .7rem; border-right: 0; border-bottom: 1px solid var(--line); }
-      .brand { margin-right: auto; } .nav-links { order: 3; width: 100%; grid-template-columns: repeat(5, 1fr); }
-      .nav-links a { text-align: center; border-left: 0; border-bottom: 3px solid transparent; }
-      .nav-links a.active { border-bottom-color: var(--accent-strong); }
-      .sidebar-foot { margin: 0; } .theme-toggle { width: auto; } .main { padding: 1rem; }
-      .stats { grid-template-columns: repeat(2, 1fr); } .grid { grid-template-columns: 1fr; }
-    }
-  </style>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
+  <svg xmlns="http://www.w3.org/2000/svg" class="icon-sprite" aria-hidden="true"><defs>
+<symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6Z"/></symbol>
+<symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+<symbol id="icon-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="m12 12 8-8"/><circle cx="12" cy="12" r="1"/></symbol>
+<symbol id="icon-pulse" viewBox="0 0 24 24"><path d="M2 12h5l3-8 4 16 3-8h5"/></symbol>
+<symbol id="icon-radio" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M7 7a7 7 0 0 0 0 10m10-10a7 7 0 0 1 0 10M4 4a11 11 0 0 0 0 16M20 4a11 11 0 0 1 0 16"/></symbol>
+<symbol id="icon-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m9 3 6 0 1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z"/></symbol>
+</defs></svg>
   <div class="shell">
     <aside class="sidebar">
-      <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">ADAPTIVE IOT</span><span class="brand-name">SOC Console</span></a>
+      <a class="brand" href="{{ url_for('index') }}"><span class="brand-shield"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg></span><span><span class="brand-name">Adaptive IoT Honeypot</span><span class="brand-mark">SOC Console</span></span></a>
       <nav class="nav-links" aria-label="Dashboard">
-        <a href="{{ url_for('index') }}" {% if request.endpoint == 'index' %}class="active" aria-current="page"{% endif %}>Overview</a>
-        <a href="{{ url_for('attackers_page') }}" {% if request.endpoint in ('attackers_page', 'attacker_page') %}class="active" aria-current="page"{% endif %}>Attackers</a>
-        <a href="{{ url_for('events_page') }}" {% if request.endpoint == 'events_page' %}class="active" aria-current="page"{% endif %}>Events</a>
-        <a href="{{ url_for('alerts_page') }}" {% if request.endpoint == 'alerts_page' %}class="active" aria-current="page"{% endif %}>Alerts</a>
-        <a href="{{ url_for('sessions_page') }}" {% if request.endpoint == 'sessions_page' %}class="active" aria-current="page"{% endif %}>Sessions</a>
+        {% for endpoint, icon, label in [('index','grid','Overview'), ('attackers_page','radar','Attackers'), ('events_page','pulse','Events & Alerts'), ('honeypot_page','radio','Honeypot / Decoy'), ('policy_page','shield','Response Policy'), ('settings_page','settings','Settings')] %}
+        <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint or (endpoint == 'attackers_page' and request.endpoint == 'attacker_page') or (endpoint == 'events_page' and request.endpoint == 'alerts_page') or (endpoint == 'honeypot_page' and request.endpoint == 'sessions_page') %}class="active" aria-current="page"{% endif %}><svg class="nav-icon icon" aria-hidden="true"><use href="#icon-{{ icon }}"/></svg><span class="nav-label">{{ label }}</span></a>
+        {% endfor %}
       </nav>
       <div class="sidebar-foot sidebar-actions">
+        <div class="profile-summary"><div class="eyebrow">◎ Decoy profiles</div>{% for name, profile in console_profiles.items() %}<div>{{ profile.device_name }} · {{ profile.firmware }}</div>{% endfor %}<span class="live-dot">LOCAL EVIDENCE</span></div>
         <button class="theme-toggle" id="desktop-alerts" type="button">Desktop alerts: enable</button>
-        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark theme">Theme: <span id="theme-label">dark</span></button>
+        <button class="button" id="collapse-sidebar" type="button" aria-label="Collapse sidebar" aria-expanded="true">‹ <span class="nav-label">Collapse</span></button>
       </div>
     </aside>
-    <main class="main">{% block content %}{% endblock %}</main>
+    <div class="workspace">
+      <header class="topbar"><div class="topbar-title">{{ console_page }} <span class="tag">MQTT HONEYPOT</span></div><div class="topbar-tools">
+        <form action="{{ url_for('attackers_page') }}" class="search-form"><span aria-hidden="true">⌕</span><input name="ip" aria-label="Search attacker IP" placeholder="Search attacker IP…" value="{{ request.args.get('ip', '') }}"></form>
+        <span class="source-badge" id="connection-status" role="status">Connecting…</span>
+        <button class="button" id="theme-toggle" type="button" aria-label="Toggle light and dark theme">◐ <span id="theme-label">light</span></button><time id="console-clock" class="mono"></time>
+      </div></header>
+      <div id="connection-banner" class="connection-banner" role="status" hidden><span id="connection-message">API unavailable. Keeping the last snapshot.</span> <button class="button" id="retry-connection" type="button">Retry now</button> <a href="{{ url_for('settings_page') }}">Connection settings</a></div>
+      <div class="subbar"><span><span id="tracked-clients">—</span> clients tracked <span class="poll-label">poll <span id="poll-seconds">3</span>s</span></span><span><span id="last-updated" role="status">Waiting for update</span> · <a href="{{ url_for('settings_page') }}">Settings</a></span></div>
+      <main class="main" data-page="{{ request.endpoint }}">{% block content %}{% endblock %}</main>
+    </div>
   </div>
-  <div class="toast-stack" id="toast-stack" aria-live="assertive"></div>
-  <script>
-    (() => {
-      const root = document.documentElement, label = document.getElementById("theme-label"), button = document.getElementById("theme-toggle");
-      const syncLabel = () => { label.textContent = root.dataset.theme; };
-      syncLabel();
-      button.addEventListener("click", () => {
-        root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
-        try { localStorage.setItem("soc-theme", root.dataset.theme); } catch (_) { /* storage may be disabled */ }
-        syncLabel();
-      });
-      document.querySelectorAll("table.sortable th[data-sort]").forEach((heading) => {
-        heading.addEventListener("click", () => {
-          const table = heading.closest("table"), body = table.tBodies[0];
-          const column = Array.from(heading.parentElement.children).indexOf(heading), ascending = heading.dataset.direction !== "asc";
-          const rows = Array.from(body.rows);
-          rows.sort((left, right) => {
-            const a = left.cells[column]?.dataset.sortValue ?? left.cells[column]?.textContent.trim() ?? "";
-            const b = right.cells[column]?.dataset.sortValue ?? right.cells[column]?.textContent.trim() ?? "";
-            const an = Number(a), bn = Number(b);
-            const comparison = a !== "" && b !== "" && Number.isFinite(an) && Number.isFinite(bn) ? an - bn : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
-            return ascending ? comparison : -comparison;
-          });
-          table.querySelectorAll("th[data-sort]").forEach((item) => { delete item.dataset.direction; });
-          heading.dataset.direction = ascending ? "asc" : "desc";
-          rows.forEach((row) => body.appendChild(row));
-        });
-      });
-    })();
-    (() => {
-      const button = document.getElementById("desktop-alerts"), stack = document.getElementById("toast-stack");
-      let cursor = null;
-      const syncButton = () => {
-        button.textContent = !('Notification' in window) ? "Desktop alerts: unavailable" :
-          Notification.permission === "granted" ? "Desktop alerts: on" : "Desktop alerts: enable";
-      };
-      button.addEventListener("click", async () => {
-        if ('Notification' in window && Notification.permission !== "granted") await Notification.requestPermission();
-        syncButton();
-      });
-      const showAlert = (event) => {
-        const message = `${event.ip} · score ${Number(event.score).toFixed(1)} · ${event.detail}`;
-        const toast = document.createElement("div"); toast.className = "toast";
-        const title = document.createElement("strong"); title.textContent = `Suspicious activity: ${String(event.action).toUpperCase()}`;
-        const body = document.createElement("span"); body.textContent = message; toast.append(title, body); stack.appendChild(toast);
-        setTimeout(() => toast.remove(), 10000);
-        if ('Notification' in window && Notification.permission === "granted") new Notification(title.textContent, { body: message, tag: `honeypot-${event.rowid}` });
-      };
-      const poll = async () => {
-        try {
-          const suffix = cursor === null ? "" : `?after=${cursor}`;
-          const response = await fetch(`{{ url_for('api_alerts') }}${suffix}`, { cache: "no-store" });
-          if (!response.ok) return;
-          const data = await response.json(); cursor = data.cursor; data.events.forEach(showAlert);
-        } catch (_) { /* keep the last cursor and retry */ }
-      };
-      syncButton(); poll(); setInterval(poll, 3000);
-    })();
-  </script>
+  <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='console.js') }}"></script>
+  <script src="{{ url_for('static', filename='views.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

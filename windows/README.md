@@ -29,3 +29,33 @@ The smoke test asks Python to bind the attacker socket to `127.0.0.2`; Windows r
 If the initial bind check fails on a particular Windows/network security configuration, the test stops with a clear error. It does not weaken the production proxy, forge a client identity, or fall back to mixing legitimate and attack traffic under one IP. Run the unit tests and lifecycle checks, but use a second physical host for the full source-isolation smoke test in that environment.
 
 Logs are written to `logs\`. The dashboard URL is controlled by `PI_IP` and `DASH_PORT`; the default is <http://127.0.0.1:5000>.
+
+## Dashboard and individual demonstrations
+
+With the full stack running, open <http://127.0.0.1:5000>. **Settings → Appearance
+→ Dark** selects a pure black background; Light is the default. Ctrl+F5 reloads
+updated styles. Settings also saves a 3/5/10/30-second refresh interval and tests
+the data endpoints. Expect 10 core checks, plus three source-specific checks when
+an attacker is recorded. API health does not confirm MQTT or ESP32 availability.
+
+For browsing evidence without starting MQTT, run this in a normal PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe .\pi\dashboard\app.py
+```
+
+Do not run that standalone command alongside the full stack: both use the same
+dashboard port. Stop it with Ctrl+C before using `windows/run_all.ps1`.
+
+For the complete demonstration, see [DEMO.md](../DEMO.md) and the
+[individual scenario guide](../attacker/README.md). For example:
+
+```powershell
+.\.venv\Scripts\python.exe .\attacker\brute_force.py
+```
+
+Overview's Attack categories chart counts classified events. Total attackers
+counts distinct IPs. Events & Alerts provides full-history filters, stable older
+pages, matching CSV export, and Full evidence ZIP. Attacker details and the
+Sessions ledger update live. Scenario scripts save verified JSON reports under
+`data/demo-results/`; no dashboard data is synthesized.

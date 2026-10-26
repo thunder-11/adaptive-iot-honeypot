@@ -22,7 +22,8 @@ def test_dashboard_pages_and_json_apis():
     db.update_cloud_status(True, "12345", now + 2, path)
     app.config.update(TESTING=True, DB_PATH=str(path))
     client = app.test_client()
-    pages = ("/", "/attackers", "/events", "/alerts", "/sessions", "/attacker/10.0.0.9")
+    pages = ("/", "/attackers", "/events", "/alerts", "/sessions", "/attacker/10.0.0.9",
+             "/honeypot", "/policy", "/settings")
     for route in pages:
         page = client.get(route)
         assert page.status_code == 200
@@ -36,6 +37,9 @@ def test_dashboard_pages_and_json_apis():
     assert stats["total_attackers"] == 1
     assert stats["sessions"] == 1
     assert stats["decoy_hits"] == 1
+    assert stats["decoy_sessions"] == 1
+    assert stats["classified_events"] == 1
+    assert stats["attack_event_distribution"] == {"Reconnaissance": 1}
     assert stats["high_critical"] == 1
     assert stats["first_high_critical_latency_ms"] == {
         "p50": 1000.0, "p95": 1000.0, "samples": 1,
@@ -63,6 +67,17 @@ def test_dashboard_pages_and_json_apis():
         }
         assert b"wildcard_subscription" in archive.read("events.csv")
     assert client.get("/api/sessions").status_code == 200
+    decoy = client.get("/api/honeypot").get_json()
+    assert decoy["routing"] == {"decoy": 1}
+    assert decoy["profiles"]["smart_lock"]["device_name"] == "SecureDoor SL-200"
+    assert decoy["messages"][0]["payload"] == "unlock"
+    assert decoy["sessions"][0]["profile"] == "smart_lock"
+    policy = client.get("/policy").data
+    assert b"wildcard_subscription" in policy
+    assert b"Scores are not globally capped at 100" in policy
+    assert b"REAL_PASS" not in policy
+    for asset in ("console.css", "console.js"):
+        assert client.get(f"/static/{asset}").status_code == 200
     attacker = client.get("/api/attacker/10.0.0.9").get_json()
     assert attacker["timeline"][1]["signal"] == "wildcard_subscription"
     assert attacker["decoy_messages"][0]["payload"] == "unlock"

@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · Evidence unavailable{% endblock %}
+{% block content %}
+<section class="panel"><header class="panel-heading"><div><h2>{{ code }} · Evidence unavailable</h2><p>{{ message }}</p></div></header><p>The record may have been cleared, or the service may be temporarily unavailable.</p><div class="toolbar"><a class="button primary" href="{{ url_for('index') }}">Return to overview</a><a class="button" href="{{ url_for('attackers_page') }}">View current attackers</a></div></section>
+{% endblock %}

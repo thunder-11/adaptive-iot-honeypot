@@ -1,46 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Alerts{% endblock %}
+{% block title %}Security Alerts{% endblock %}
 {% block content %}
-<header class="page-head">
-  <div><div class="eyebrow">Persistent notification feed</div><h1>Security Alerts</h1><span class="muted">Suspicious activity at or above the configured alert threshold.</span></div>
-  <div class="status-line">Live refresh 3s · <span id="alert-count">{{ alerts|length }}</span> shown</div>
-</header>
-<section class="panel">
-  <div class="toolbar">
-    <button class="button" id="enable-alerts" type="button">Enable desktop notifications</button>
-    <a class="button" href="{{ url_for('export_evidence_zip') }}">Export evidence ZIP</a>
-    <span class="status-line">Default threshold: MEDIUM / throttle and above</span>
-  </div>
-</section>
-<section class="panel">
-  <div class="table-wrap"><table><thead><tr><th>Time</th><th>IP</th><th>Severity</th><th>Category</th><th>Signal</th><th>Score</th><th>Action</th><th>Details</th></tr></thead><tbody id="alerts-body">
-    {% set action_risks = {'allow': 'LOW', 'throttle': 'MEDIUM', 'restrict': 'HIGH', 'decoy': 'CRITICAL'} %}
-    {% for alert in alerts %}{% set severity = action_risks.get(alert.action, '') %}<tr><td>{{ '%.3f'|format(alert.time) }}</td><td>{{ alert.ip }}</td><td class="{{ severity }}">{{ severity }}</td><td>{{ alert.category or '-' }}</td><td>{{ alert.signal or '-' }}</td><td>{{ '%.1f'|format(alert.score) }}</td><td class="{{ alert.action }}">{{ alert.action }}</td><td class="wrap">{{ alert.detail }}</td></tr>
-    {% else %}<tr class="empty-row"><td colspan="8" class="empty">No suspicious activity has crossed the alert threshold.</td></tr>{% endfor %}
-  </tbody></table></div>
-</section>
-{% endblock %}
-{% block scripts %}
-<script>
-  (() => {
-    const riskFor = { allow: "LOW", throttle: "MEDIUM", restrict: "HIGH", decoy: "CRITICAL" };
-    const body = document.getElementById("alerts-body"), count = document.getElementById("alert-count");
-    const cell = (value, className = "") => { const node = document.createElement("td"); node.textContent = value; node.className = className; return node; };
-    const render = (alerts) => {
-      body.replaceChildren(); count.textContent = alerts.length;
-      if (!alerts.length) { const row = document.createElement("tr"); row.className = "empty-row"; const empty = cell("No suspicious activity has crossed the alert threshold.", "empty"); empty.colSpan = 8; row.appendChild(empty); body.appendChild(row); return; }
-      alerts.forEach((alert) => {
-        const severity = riskFor[alert.action] || "", row = document.createElement("tr");
-        row.append(cell(Number(alert.time).toFixed(3)), cell(alert.ip), cell(severity, severity), cell(alert.category || "-"), cell(alert.signal || "-"), cell(Number(alert.score).toFixed(1)), cell(alert.action, alert.action), cell(alert.detail, "wrap"));
-        body.appendChild(row);
-      });
-    };
-    const refresh = async () => {
-      try { const response = await fetch("{{ url_for('api_alert_history', limit=100) }}", { cache: "no-store" }); if (response.ok) render(await response.json()); }
-      catch (_) { /* retain the last good snapshot */ }
-    };
-    document.getElementById("enable-alerts").addEventListener("click", () => document.getElementById("desktop-alerts").click());
-    setInterval(refresh, 3000);
-  })();
-</script>
+<section class="panel"><header class="panel-heading"><div><h2>Security Alerts</h2><p>Latest <span id="alert-count">{{ alerts|length }}</span> events at or above the configured threshold</p></div><div class="toolbar"><button class="button" id="enable-alerts" type="button">Enable desktop notifications</button><a class="button" href="{{ url_for('events_page') }}">All events</a><a class="button" href="{{ url_for('export_evidence_zip') }}">Export evidence ZIP</a></div></header><div class="toolbar"><span class="status-line" id="alert-threshold">Loading alert threshold…</span><span class="status-line" id="notification-status" role="status"></span></div></section>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Time</th><th>Source IP</th><th>Severity</th><th>Category</th><th>Signal</th><th>Score</th><th>Action</th><th>Details</th></tr></thead><tbody id="alerts-body"></tbody></table></div></section>
+<script id="initial-alerts" type="application/json">{{ alerts|tojson }}</script>
 {% endblock %}

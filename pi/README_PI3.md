@@ -131,3 +131,17 @@ while the real ESP32 stays responsive; follow the main README runbook.
 No physical Pi was available when these changes were authored. Passing desktop
 tests does not certify the kit's SD card, power supply, Wi-Fi, ARM installation,
 or performance under attack; the on-board checks above cover that final step.
+
+## Updated console and demo workflow
+
+After starting the stack, open `http://PI_IP:5000` from the laptop. In Settings,
+Test connection verifies the dashboard data endpoints; it does not prove that
+MQTT brokers or the ESP32 are available. Appearance offers the default light
+console and a pure black dark background. Saved refresh intervals are 3, 5, 10,
+or 30 seconds. Hard-refresh the browser after copying updated sources.
+
+See [DEMO.md](../DEMO.md) for the presentation sequence and
+[attacker/README.md](../attacker/README.md) for eight individual attack scenarios
+and a benign control with verified JSON evidence reports. Use Events & Alerts
+for full-history filters and CSV/ZIP exports, and Honeypot / Decoy for recorded
+sessions/messages. Attacker details and session durations refresh automatically.

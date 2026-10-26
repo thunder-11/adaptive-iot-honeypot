@@ -284,8 +284,12 @@ Test-NetConnection 192.168.1.10 -Port 5000
 Start-Process 'http://192.168.1.10:5000'
 ```
 
-Both TCP checks should succeed. Visit Overview, Events, Alerts, Attackers and
-Sessions. HTTP on a LAN may not support browser desktop notifications; the
+Both TCP checks should succeed. Visit Overview, Attackers, Events & Alerts,
+Honeypot / Decoy, Response Policy, and Settings. Security Alerts opens from
+Events & Alerts; the full Sessions ledger opens from Honeypot / Decoy. In Settings,
+Test connection checks the API/database, and Appearance → Dark selects the black
+background. Use [the updated demo runbook](DEMO.md) for individual attack trials
+and evidence exports. HTTP on a LAN may not support browser desktop notifications; the
 dashboard alert list is the reliable local record.
 
 ### P2 — new Pi terminal / second SSH session: watch real device traffic

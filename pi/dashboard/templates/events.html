@@ -1,62 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Events{% endblock %}
+{% block title %}Events & Alerts{% endblock %}
 {% block content %}
-<header class="page-head"><div><div class="eyebrow">Evidence stream</div><h1>Events</h1><span class="muted">Live scoring signals and adaptive responses.</span></div><div class="toolbar"><a class="button" href="{{ url_for('export_events_csv') }}">Events CSV</a><a class="button" href="{{ url_for('export_evidence_zip') }}">Full evidence ZIP</a><button class="button danger" id="clear-logs" type="button">Clear logs + scores</button><span class="status-line">Refresh 3s · <span id="visible-count">{{ events|length }}</span> visible</span></div></header>
-<section class="panel">
-  <div class="filters">
-    <div class="filter"><label for="risk-filter">Risk</label><select id="risk-filter"><option value="">All risks</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div>
-    <div class="filter"><label for="action-filter">Action</label><select id="action-filter"><option value="">All actions</option><option>allow</option><option>throttle</option><option>restrict</option><option>decoy</option></select></div>
-    <span class="status-line">Risk is mapped from the recorded action.</span>
-  </div>
-</section>
-<section class="panel"><div class="table-wrap"><table><thead><tr><th>Time</th><th>IP</th><th>Risk</th><th>Category</th><th>Signal</th><th>Points</th><th>Score</th><th>Action</th><th>Detail</th></tr></thead><tbody id="events-body">
-  {% set action_risks = {'allow': 'LOW', 'throttle': 'MEDIUM', 'restrict': 'HIGH', 'decoy': 'CRITICAL'} %}
-  {% for row in events %}{% set event_risk = action_risks.get(row.action, '') %}<tr data-risk="{{ event_risk }}" data-action="{{ row.action }}"><td>{{ '%.3f'|format(row.time) }}</td><td>{{ row.ip }}</td><td class="{{ event_risk }}">{{ event_risk or '-' }}</td><td>{{ row.category or '-' }}</td><td>{{ row.signal or '-' }}</td><td>+{{ '%.1f'|format(row.points) }}</td><td>{{ '%.1f'|format(row.score) }}</td><td class="{{ row.action }}">{{ row.action }}</td><td class="wrap">{{ row.detail }}</td></tr>
-  {% else %}<tr class="empty-row"><td colspan="9" class="empty">No events recorded yet.</td></tr>{% endfor %}
-</tbody></table></div></section>
-{% endblock %}
-{% block scripts %}
-<script>
-  (() => {
-    const riskFor = { allow: "LOW", throttle: "MEDIUM", restrict: "HIGH", decoy: "CRITICAL" };
-    const riskFilter = document.getElementById("risk-filter"), actionFilter = document.getElementById("action-filter");
-    const body = document.getElementById("events-body"), visibleCount = document.getElementById("visible-count");
-    const clearButton = document.getElementById("clear-logs");
-    const applyFilters = () => {
-      let visible = 0;
-      body.querySelectorAll("tr:not(.empty-row)").forEach((row) => {
-        const show = (!riskFilter.value || row.dataset.risk === riskFilter.value) && (!actionFilter.value || row.dataset.action === actionFilter.value);
-        row.hidden = !show; if (show) visible += 1;
-      });
-      visibleCount.textContent = visible;
-    };
-    const cell = (value, className = "") => { const node = document.createElement("td"); node.textContent = value; node.className = className; return node; };
-    const render = (events) => {
-      body.replaceChildren();
-      if (!events.length) { const row = document.createElement("tr"); row.className = "empty-row"; const empty = cell("No events recorded yet.", "empty"); empty.colSpan = 9; row.appendChild(empty); body.appendChild(row); }
-      events.forEach((event) => {
-        const risk = riskFor[event.action] || "", row = document.createElement("tr"); row.dataset.risk = risk; row.dataset.action = event.action || "";
-        row.append(cell(Number(event.time).toFixed(3)), cell(event.ip), cell(risk || "-", risk), cell(event.category || "-"), cell(event.signal || "-"), cell(`+${Number(event.points).toFixed(1)}`), cell(Number(event.score).toFixed(1)), cell(event.action, riskFor[event.action] ? event.action : ""), cell(event.detail, "wrap"));
-        body.appendChild(row);
-      });
-      applyFilters();
-    };
-    const refresh = async () => {
-      try { const response = await fetch("{{ url_for('api_events', limit=100) }}", { cache: "no-store" }); if (response.ok) render(await response.json()); }
-      catch (_) { /* retain the last good snapshot */ }
-    };
-    riskFilter.addEventListener("change", applyFilters); actionFilter.addEventListener("change", applyFilters);
-    clearButton.addEventListener("click", async () => {
-      if (!confirm("Clear all recorded attack events, sessions, attackers, decoy messages, alert logs, and live risk scores? The current physical-device state will be kept.")) return;
-      clearButton.disabled = true;
-      try {
-        const response = await fetch("{{ url_for('clear_logs') }}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "clear" }) });
-        if (!response.ok) throw new Error("clear failed");
-        render([]);
-      } catch (_) { alert("Could not clear logs. Check the dashboard log for details."); }
-      finally { clearButton.disabled = false; }
-    });
-    applyFilters(); setInterval(refresh, 3000);
-  })();
-</script>
+<section class="panel"><header class="panel-heading"><div><h2>Event log</h2><p><span id="visible-count">{{ events|length }}</span> loaded of <span id="matching-count">{{ events|length }}</span> matching signals · <span id="stream-state">streaming</span></p></div><div class="toolbar"><button class="button" id="pause-stream" type="button" aria-pressed="false">Ⅱ Pause stream</button><a class="button" href="{{ url_for('alerts_page') }}">Security alerts</a><a class="button" id="filtered-export" href="{{ url_for('export_events_csv') }}">↓ Export CSV</a><a class="button" href="{{ url_for('export_evidence_zip') }}">Full evidence ZIP</a><button class="button danger" id="clear-logs" type="button">Clear logs + scores</button></div></header><div class="filters"><input id="ip-filter" placeholder="Exact source IP…" aria-label="Filter source IP"><select id="category-filter" aria-label="Filter category"><option value="">All categories</option></select><select id="action-filter" aria-label="Filter action"><option value="">All actions</option><option value="allow">Allow</option><option value="throttle">Throttle</option><option value="restrict">Restrict</option><option value="decoy">Redirect to decoy</option></select><select id="risk-filter" aria-label="Filter risk"><option value="">All risks</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select><select id="time-filter" aria-label="Filter time"><option value="0">All time</option><option value="300">Last 5 minutes</option><option value="3600">Last hour</option><option value="86400">Last day</option></select><span class="status-line live-dot" id="stream-indicator">● live</span></div></section>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Time</th><th>Source IP</th><th>Category</th><th>Signal</th><th>Pts</th><th>Score</th><th>Action</th><th>Detail</th></tr></thead><tbody id="events-body"></tbody></table></div></section>
+<div class="toolbar pagination-controls"><button class="button" id="load-more-events" type="button" hidden>Load older events</button><span class="status-line" id="event-load-status" role="status"></span></div>
+<script id="initial-events" type="application/json">{{ events|tojson }}</script>
 {% endblock %}

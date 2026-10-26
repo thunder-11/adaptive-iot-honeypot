@@ -6,13 +6,16 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
+import sqlite3
 import sys
 import time
 import zipfile
 from collections import Counter
 from pathlib import Path
 
-from flask import Flask, Response, abort, jsonify, render_template, request
+from flask import Flask, Response, abort, g, jsonify, render_template, request
+from werkzeug.exceptions import HTTPException
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -22,8 +25,49 @@ from pi.analysis.evaluate import first_high_critical_latencies, percentile
 from pi.config import addresses, integer, load_config, number
 from pi.security import action_for_score, risk_level, split_categories
 from pi.alerts import ACTION_ORDER
+from pi.decoy.profiles import load_profiles
 
 app = Flask(__name__)
+
+
+@app.teardown_appcontext
+def close_dashboard_connection(_error=None):
+    connection = g.pop("dashboard_connection", None)
+    if connection is not None:
+        connection.close()
+
+
+@app.after_request
+def fresh_evidence(response):
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.errorhandler(HTTPException)
+def request_error(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": error.description}), error.code
+    return render_template("error.html", code=error.code, message=error.description), error.code
+
+
+@app.errorhandler(sqlite3.Error)
+def evidence_error(error):
+    app.logger.error("Evidence database unavailable: %s", error)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Evidence database unavailable. Retry shortly."}), 503
+    return render_template("error.html", code=503,
+                           message="Evidence database unavailable. Retry shortly."), 503
+
+
+@app.context_processor
+def console_context():
+    return {"console_profiles": load_profiles(), "console_page": {
+        "index": "Overview", "attackers_page": "Attackers", "attacker_page": "Attacker detail",
+        "events_page": "Events & Alerts", "alerts_page": "Security Alerts",
+        "sessions_page": "Sessions", "honeypot_page": "Honeypot / Decoy",
+        "policy_page": "Response Policy", "settings_page": "Settings",
+    }.get(request.endpoint, "SOC Console")}
 
 
 def database_path() -> Path:
@@ -31,7 +75,19 @@ def database_path() -> Path:
 
 
 def query(sql: str, parameters: tuple[object, ...] = ()) -> list[dict[str, object]]:
-    return [dict(row) for row in db.rows(sql, parameters, database_path())]
+    # One read transaction per request keeps counters coherent during concurrent
+    # proxy writes/resets and avoids repeating schema checks for every SELECT.
+    if "dashboard_connection" not in g:
+        connection = db.connect(database_path())
+        connection.row_factory = sqlite3.Row
+        connection.execute("BEGIN")
+        g.dashboard_connection = connection
+    return [dict(row) for row in g.dashboard_connection.execute(sql, parameters)]
+
+
+def evidence_generation():
+    rows = query("SELECT value FROM system_state WHERE key = 'score_reset'")
+    return str(rows[0]["value"]) if rows else ""
 
 
 def bounded_limit(default: int = 100) -> int:
@@ -52,7 +108,7 @@ def current_risk(row: dict[str, object], config: dict[str, str]) -> dict[str, ob
     ip = str(row["ip"])
     score = float(row.get("current_score", row.get("score", 0.0)))
     seen = float(row.get("last_seen", row.get("time", time.time())))
-    score = max(0.0, score - (time.time() - seen) * number(config, "DECAY_POINTS_PER_SEC"))
+    score = max(0.0, score - max(0.0, time.time() - seen) * number(config, "DECAY_POINTS_PER_SEC"))
     if ip in addresses(config, "WHITELIST_IPS"):
         score = min(score, number(config, "WHITELIST_MAX_ANOMALY_SCORE"))
     action = "decoy" if ip in addresses(config, "DECOY_FORCE_IPS") else action_for_score(
@@ -65,7 +121,8 @@ def current_risk(row: dict[str, object], config: dict[str, str]) -> dict[str, ob
 
 def attacker_rows() -> list[dict[str, object]]:
     config = load_config()
-    values = query("SELECT * FROM attackers WHERE attack_count > 0 ORDER BY highest_risk DESC")
+    values = query("SELECT *, (SELECT MAX(time) FROM events WHERE events.ip = attackers.ip) "
+                   "AS last_observed FROM attackers WHERE attack_count > 0 ORDER BY highest_risk DESC")
     return [current_risk(row, config) for row in values]
 
 
@@ -92,6 +149,12 @@ def stats_payload() -> dict[str, object]:
     attack_distribution: Counter[str] = Counter()
     for row in attackers:
         attack_distribution.update(split_categories(str(row["attack_types"])))
+    attack_event_distribution = {
+        row["category"]: row["count"] for row in query(
+            "SELECT category, COUNT(*) AS count FROM events "
+            "WHERE category != '' GROUP BY category ORDER BY category"
+        )
+    }
     session_count = query("SELECT COUNT(*) AS count FROM sessions")[0]["count"]
     decoy_hits = query("SELECT COUNT(*) AS count FROM decoy_messages")[0]["count"]
     response_events = query(
@@ -107,9 +170,12 @@ def stats_payload() -> dict[str, object]:
         "high_critical": sum(1 for row in attackers if row["risk_level"] in {"HIGH", "CRITICAL"}),
         "sessions": session_count,
         "decoy_hits": decoy_hits,
+        "decoy_sessions": query("SELECT COUNT(*) AS count FROM sessions WHERE backend = 'decoy'")[0]["count"],
         "risk_distribution": {name: risk_distribution.get(name, 0)
                               for name in ("LOW", "MEDIUM", "HIGH", "CRITICAL")},
         "attack_distribution": dict(attack_distribution),
+        "classified_events": sum(attack_event_distribution.values()),
+        "attack_event_distribution": attack_event_distribution,
         "first_high_critical_latency_ms": {
             "p50": percentile(response_latencies, 0.50),
             "p95": percentile(response_latencies, 0.95),
@@ -123,16 +189,24 @@ def stats_payload() -> dict[str, object]:
     }
 
 
-def attacker_payload(ip: str) -> dict[str, object]:
-    rows = query("SELECT * FROM attackers WHERE ip = ?", (ip,))
+def attacker_payload(ip: str, record_limit: int | None = None) -> dict[str, object]:
+    rows = query("SELECT *, (SELECT MAX(time) FROM events WHERE events.ip = attackers.ip) "
+                 "AS last_observed FROM attackers WHERE ip = ?", (ip,))
     if not rows:
         abort(404)
     attacker = current_risk(rows[0], load_config())
-    attacker["timeline"] = query("SELECT rowid, * FROM events WHERE ip = ? ORDER BY time", (ip,))
-    attacker["sessions"] = query("SELECT rowid, * FROM sessions WHERE ip = ? ORDER BY start", (ip,))
-    attacker["decoy_messages"] = query(
-        "SELECT rowid, * FROM decoy_messages WHERE ip = ? ORDER BY time", (ip,)
-    )
+    if record_limit is None and "limit" in request.args:
+        record_limit = bounded_limit()
+    for key, table, time_column in (("timeline", "events", "time"),
+                                    ("sessions", "sessions", "start"),
+                                    ("decoy_messages", "decoy_messages", "time")):
+        if record_limit is not None:
+            values = query(f"SELECT rowid, * FROM {table} WHERE ip = ? "
+                           f"ORDER BY {time_column} DESC, rowid DESC LIMIT ?", (ip, record_limit))
+            attacker[key] = list(reversed(values))
+        else:
+            attacker[key] = query(f"SELECT rowid, * FROM {table} WHERE ip = ? "
+                                  f"ORDER BY {time_column}, rowid", (ip,))
     attacker["historical_behavior"] = json.loads(str(attacker["historical_behavior"]) or "[]")
     attacker["similar_attackers"] = query(
         "SELECT ip, fingerprint_label, highest_risk FROM attackers "
@@ -140,6 +214,62 @@ def attacker_payload(ip: str) -> dict[str, object]:
         (attacker["fingerprint"], ip),
     )
     return attacker
+
+
+def event_filters():
+    clauses, parameters = [], []
+    for key, column in (("ip", "ip"), ("category", "category"), ("action", "action")):
+        value = request.args.get(key, "").strip()
+        if value:
+            clauses.append(f"{column} = ?")
+            parameters.append(value)
+    risk = request.args.get("risk", "")
+    if risk:
+        risk_action = {"LOW": "allow", "MEDIUM": "throttle", "HIGH": "restrict", "CRITICAL": "decoy"}
+        if risk not in risk_action:
+            abort(400, description="Unknown risk level")
+        clauses.append("action = ?")
+        parameters.append(risk_action[risk])
+    since = request.args.get("since")
+    if since:
+        try:
+            value = float(since)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError
+        except ValueError:
+            abort(400, description="since must be a finite, nonnegative Unix timestamp")
+        clauses.append("time >= ?")
+        parameters.append(value)
+    return clauses, parameters
+
+
+@app.get("/api/event-feed")
+def api_event_feed():
+    clauses, parameters = event_filters()
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    total = query("SELECT COUNT(*) AS count FROM events" + where, tuple(parameters))[0]["count"]
+    before = bounded_nonnegative("before")
+    if before:
+        clauses.append("rowid < ?")
+        parameters.append(before)
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    limit = bounded_limit()
+    rows = query("SELECT rowid, * FROM events" + where + " ORDER BY rowid DESC LIMIT ?",
+                 (*parameters, limit + 1))
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    return jsonify({"events": rows, "total": total, "has_more": has_more,
+                    "next_before": rows[-1]["rowid"] if has_more else None,
+                    "generation": evidence_generation()})
+
+
+@app.get("/api/health")
+def api_health():
+    query("SELECT 1")
+    latest = query("SELECT MAX(time) AS time FROM events")[0]["time"]
+    return jsonify({"status": "ok", "database": "connected", "latest_event": latest,
+                    "generated_at": time.time(), "alert_min_action": load_config().get("ALERT_MIN_ACTION", "throttle"),
+                    "note": "API and evidence database status; does not assert MQTT services are running."})
 
 
 @app.route("/")
@@ -154,7 +284,8 @@ def attackers_page() -> str:
 
 @app.get("/attacker/<path:ip>")
 def attacker_page(ip: str) -> str:
-    return render_template("attacker.html", attacker=attacker_payload(ip))
+    # Keep initial page loads bounded too; full evidence remains exportable.
+    return render_template("attacker.html", attacker=attacker_payload(ip, record_limit=100))
 
 
 @app.get("/events")
@@ -172,6 +303,64 @@ def alerts_page() -> str:
 def sessions_page() -> str:
     sessions = query("SELECT rowid, * FROM sessions ORDER BY start DESC LIMIT 100")
     return render_template("sessions.html", sessions=sessions)
+
+
+@app.get("/honeypot")
+def honeypot_page():
+    return render_template("honeypot.html", data=honeypot_payload())
+
+
+def honeypot_payload():
+    return {"profiles": load_profiles(),
+            "sessions": query("SELECT rowid, * FROM sessions WHERE backend = 'decoy' ORDER BY start DESC LIMIT 100"),
+            "messages": query("SELECT rowid, * FROM decoy_messages ORDER BY time DESC LIMIT 100"),
+            "routing": {row["backend"]: row["count"] for row in query(
+                "SELECT backend, COUNT(*) AS count FROM sessions GROUP BY backend")}}
+
+
+@app.get("/api/honeypot")
+def api_honeypot():
+    return jsonify(honeypot_payload())
+
+
+def policy_payload():
+    config = load_config()
+    signals = [
+        ("failed_auth", "WEIGHT_FAILED_AUTH", "Rejected authentication; capped by FAILED_AUTH_CAP."),
+        ("connection_rate", "WEIGHT_CONNECTION_RATE", "Connections exceed the rolling window limit."),
+        ("publish_rate", "WEIGHT_PUBLISH_RATE", "Publishes exceed the rolling window limit."),
+        ("wildcard_subscription", "WEIGHT_WILDCARD_SUBSCRIBE", "Broad wildcard topic subscription."),
+        ("topic_enumeration", "WEIGHT_TOPIC_ENUMERATION", "Distinct topic filters exceed the configured limit."),
+        ("suspicious_publish", "WEIGHT_COMMAND_PUBLISH", "Publish to the protected home/door/lock command topic."),
+        ("malformed_packet", "WEIGHT_MALFORMED_PACKET", "Invalid MQTT framing or suspicious payload."),
+        ("short_session", "WEIGHT_SHORT_SESSION", "Repeated short sessions; points are capped."),
+        ("command_sequence", "WEIGHT_COMMAND_SEQUENCE", "Wildcard reconnaissance followed by a command."),
+        ("blacklist", "WEIGHT_BLACKLIST", "Source IP is explicitly blacklisted."),
+        ("decoy_engagement", "WEIGHT_DECOY_ENGAGEMENT", "First interaction with the decoy."),
+    ]
+    keys = {key for _, key, _ in signals} | {
+        "MEDIUM", "HIGH", "CRITICAL", "THROTTLE_DELAY_SEC", "THROTTLE_PACKET_DELAY_SEC",
+        "DECAY_POINTS_PER_SEC", "CONNECTION_LIMIT", "CONNECTION_WINDOW_SEC", "PUBLISH_LIMIT",
+        "PUBLISH_WINDOW_SEC", "FAILED_AUTH_CAP", "SHORT_SESSION_CAP", "WHITELIST_MAX_ANOMALY_SCORE",
+        "ALERT_MIN_ACTION", "TOPIC_ENUMERATION_LIMIT", "DECOY_PROFILE",
+    }
+    return {"config": {key: config[key] for key in keys}, "signals": signals}
+
+
+@app.get("/policy")
+def policy_page():
+    payload = policy_payload()
+    return render_template("policy.html", policy=payload["config"], signals=payload["signals"])
+
+
+@app.get("/api/policy")
+def api_policy():
+    return jsonify(policy_payload())
+
+
+@app.get("/settings")
+def settings_page():
+    return render_template("settings.html")
 
 
 @app.get("/api/stats")
@@ -197,10 +386,11 @@ def api_alerts():
     placeholders = ",".join("?" for _ in actions)
     cursor_rows = query("SELECT COALESCE(MAX(rowid), 0) AS cursor FROM events")
     cursor = int(cursor_rows[0]["cursor"])
+    generation = evidence_generation()
     if "after" not in request.args:
-        return jsonify({"cursor": cursor, "events": []})
+        return jsonify({"cursor": cursor, "events": [], "generation": generation})
     # SQLite may reuse rowids after the Clear logs action empties the table.
-    if cursor < after:
+    if cursor < after or ("generation" in request.args and request.args["generation"] != generation):
         after = 0
     events = query(
         f"SELECT rowid, * FROM events WHERE rowid > ? AND action IN ({placeholders}) "
@@ -208,7 +398,7 @@ def api_alerts():
         (after, *actions),
     )
     return jsonify({"cursor": max([after, *[int(row["rowid"]) for row in events]]),
-                    "events": events})
+                    "events": events, "generation": generation})
 
 
 @app.get("/api/alerts/history")
@@ -239,7 +429,9 @@ def export_events_csv():
     output = io.StringIO(newline="")
     writer = csv.writer(output)
     writer.writerow(columns)
-    for row in query("SELECT * FROM events ORDER BY time"):
+    clauses, parameters = event_filters()
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    for row in query("SELECT * FROM events" + where + " ORDER BY time", tuple(parameters)):
         values = {**row, "risk": action_risks.get(str(row["action"]), "")}
         writer.writerow([spreadsheet_safe(values.get(column, "")) for column in columns])
     return Response(
@@ -314,7 +506,15 @@ def clear_logs():
 
 @app.get("/api/sessions")
 def api_sessions():
-    return jsonify(query("SELECT rowid, * FROM sessions ORDER BY start DESC LIMIT ?", (bounded_limit(),)))
+    clauses, parameters = [], []
+    for key in ("ip", "backend"):
+        value = request.args.get(key)
+        if value:
+            clauses.append(f"{key} = ?")
+            parameters.append(value)
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    return jsonify(query("SELECT rowid, * FROM sessions" + where + " ORDER BY start DESC LIMIT ?",
+                         (*parameters, bounded_limit())))
 
 
 @app.get("/api/attacker/<path:ip>")

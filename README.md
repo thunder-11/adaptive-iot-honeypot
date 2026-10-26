@@ -42,7 +42,7 @@ This mini project puts an inspecting MQTT proxy in front of a real IoT broker an
        SQLite + Flask :5000
 ```
 
-All normal clients, including the ESP32, use the proxy at `PI_IP:1883`. The proxy buffers a complete CONNECT, calculates the route, connects to one backend, and then parses both split and coalesced packets. Whitelisted addresses always have score zero. The default adaptive flow is `LOW 0–20 → REAL`, `MEDIUM 21–40 → delayed REAL`, `HIGH 41–50 → restricted REAL`, and `CRITICAL 51+ → DECOY`. Restricted clients cannot forward wildcard subscriptions or command publishes. Crossing CRITICAL closes existing connections so reconnecting clients land in the decoy.
+All normal clients, including the ESP32, use the proxy at `PI_IP:1883`. The proxy buffers a complete CONNECT, calculates the route, connects to one backend, and then parses both split and coalesced packets. Whitelisted addresses ignore ordinary behavioral scoring; malformed packets and blacklist matches can still raise risk up to the configured anomaly cap. The default adaptive flow is `LOW 0–20 → REAL`, `MEDIUM 21–40 → delayed REAL`, `HIGH 41–50 → restricted REAL`, and `CRITICAL 51+ → DECOY`. Restricted clients cannot forward wildcard subscriptions or command publishes. Crossing CRITICAL closes existing connections so reconnecting clients land in the decoy.
 
 ### Modules for viva questions
 
@@ -166,7 +166,7 @@ Open the Pi dashboard, replacing the example with the actual Pi IP:
 http://192.168.1.10:5000
 ```
 
-Also open the ThingSpeak channel's **Private View**. The dashboard has a persistent **Alerts** page for medium, high, and critical activity. Click **Desktop alerts: enable** and allow browser notifications for system pop-ups as well.
+Also open the ThingSpeak channel's **Private View**. The dashboard has a persistent **Security Alerts** page (open it from **Events & Alerts**) for medium, high, and critical activity. Click **Desktop alerts: enable** and allow browser notifications for system pop-ups as well.
 
 ### 6. Raspberry Pi, Terminal 2 — monitor real MQTT traffic
 
@@ -257,7 +257,7 @@ Keep `127.0.0.2` out of `WHITELIST_IPS`.
 
 ### 11. Windows laptop, browser — export or clear evidence
 
-Open the dashboard's **Events** page. Click **Events CSV** to download `honeypot-attack-events.csv`, or **Full evidence ZIP** to download separate CSV files for events, attackers, sessions, decoy messages, real-device state, and ThingSpeak delivery status plus the JSON-lines alert log. Click **Clear logs + scores** only after saving required evidence. The proxy detects this request and clears its live in-memory risk scores within approximately one second; the trusted physical-device/LED state is retained.
+Open the dashboard's **Events & Alerts** page. Click **Export CSV** to download `honeypot-attack-events.csv`, or **Full evidence ZIP** to download separate CSV files for events, attackers, sessions, decoy messages, real-device state, and ThingSpeak delivery status plus the JSON-lines alert log. Click **Clear logs + scores** only after saving required evidence. The proxy detects this request and clears its live in-memory risk scores within approximately one second; the trusted physical-device/LED state is retained.
 
 ### 12. Raspberry Pi, any terminal — stop or restart
 
@@ -313,10 +313,10 @@ sudo ip addr add 127.0.0.2/8 dev lo
 
 On macOS use `sudo ifconfig lo0 alias 127.0.0.2`, install Mosquitto separately, create the virtual environment manually, and run the individual commands because the Pi lifecycle uses Linux process conventions.
 
-Expected pytest result:
+Latest verified full-suite result (with native Mosquitto available):
 
 ```text
-13 passed
+54 passed
 ```
 
 Expected smoke-test ending (numbers may be higher because connection timing can add events):
@@ -339,6 +339,11 @@ Shell variables are available after `set -a; source config.env; set +a`. Open `h
 
 ## Tests and analysis
 
+For separate runnable attack scenarios, a benign control, and automatically
+verified evidence reports, see [individual attack demonstrations](attacker/README.md).
+The Overview dashboard shows classified-event totals and event counts by attack
+type alongside its existing unique-attacker counts.
+
 ```bash
 .venv/bin/python -m pytest -q
 bash tests/smoke_test.sh
@@ -351,11 +356,37 @@ Unit tests cover all scoring signals, four adaptive levels, caps, decay, whiteli
 
 ## SOC dashboard and APIs
 
-The multi-page dashboard at `http://PI_IP:5000` has a persistent SOC navigation rail and a light/dark theme toggle that follows the system preference initially and remembers the operator's selection. Overview and Events update every three seconds without a full-page refresh.
+The multi-page dashboard at `http://PI_IP:5000` has a persistent SOC navigation rail and a light/dark theme toggle with light mode as the default and saved browser preferences. Dark mode uses a pure black (`#000000`) page and navigation background with neutral near-black panels and green accents. Choose **Settings → Appearance → Dark** or use the header theme toggle. Live pages poll every three seconds by default, with the interval configurable in Settings.
 
 The Events page can export either the event stream as a spreadsheet-safe CSV or a complete ZIP evidence bundle. It can clear recorded events, sessions, attacker summaries, decoy messages, the JSON alert log, and the proxy's live in-memory scores after confirmation. Clearing logs does not erase the latest trusted physical-device state.
 
 Medium, high, and critical activity creates an in-dashboard alert on every page with the default `ALERT_MIN_ACTION=throttle`. Use **Desktop alerts: enable** once to grant browser notification permission. `ALERT_WEBHOOK_URL` remains available for sending the same cooldown-controlled JSON alert to an external notification service.
+
+### Console pages and preferences
+
+The console uses the local Flask API and recorded SQLite evidence. Overview shows
+risk distribution, classified event counts, recent events, device state, and
+response latency. Attackers supports IP, risk, and action filters with sortable
+columns. Events & Alerts supports category/time filters and pause/resume streaming.
+Honeypot / Decoy shows configured device profiles, real/decoy routing, sessions,
+and recorded messages. Response Policy displays the actual config.env thresholds
+and scoring weights. Settings saves the browser's theme and refresh interval
+(3, 5, 10, or 30 seconds) and tests the same-server API connection.
+
+All evidence views refresh live, including individual attacker timelines and the
+session ledger. Events filters search the complete database; **Load older events**
+pauses the stream so the history stays stable. **Export CSV** includes all records
+matching the current filters. Settings tests the read-only endpoints and reports
+per-endpoint response times. API/database health is separate from MQTT broker or
+physical-device availability. Partial failures keep the last snapshot, identify
+the failed endpoint, and offer **Retry now**. Polling pauses in background tabs
+and retries failed requests with bounded backoff.
+
+No frontend build or external chart/font service is needed. API failures show an
+offline banner and keep the last snapshot; the console does not inject demo
+attacks. Restart the dashboard after updating, then hard-refresh the browser to
+load the new templates and assets. To view a remote Pi, open its dashboard URL;
+the console always reads the API from the server serving that page.
 
 ### ThingSpeak telemetry
 
@@ -388,8 +419,12 @@ Dashboard pages:
 - `/` — live total attackers, high/critical count, sessions, decoy hits, p50/p95 first high-or-critical response latency, risk distribution, and attack distribution.
 - `/attackers` — sortable attacker inventory with current risk/action, fingerprints, attack types, and observation times.
 - `/attacker/<ip>` — per-IP event timeline, sessions, decoy messages, and attackers sharing the same fingerprint.
-- `/events` — live scoring-event timeline with client-side risk and action filters.
-- `/sessions` — compact session ledger with backend, profile, timestamps, and duration.
+- `/events` — Events & Alerts; full-database IP/category/risk/action/time filters, older-event paging, pause/resume, filtered CSV, and evidence ZIP.
+- `/alerts` — persistent Security Alerts with the configured threshold and notification controls.
+- `/sessions` — live session ledger with source/backend filters, profile, readable timestamps, and duration.
+- `/honeypot` — decoy profiles, real/decoy routing split, sessions, and message feed.
+- `/policy` — read-only configured response tiers and scoring weights; restart the proxy after config changes.
+- `/settings` — black/light appearance, refresh interval, notification controls, and endpoint health checks.
 
 Read-only endpoints:
 
@@ -397,11 +432,37 @@ Read-only endpoints:
 GET /api/stats
 GET /api/attackers
 GET /api/events?limit=100
+GET /api/event-feed?limit=100
 GET /api/sessions?limit=100
+GET /api/honeypot
+GET /api/policy
+GET /api/health
+GET /api/alerts
+GET /api/alerts/history?limit=100
 GET /api/attacker/<ip>
 GET /api/risk/<ip>
 GET /api/fingerprint/<label>
+GET /api/events/export.csv
+GET /api/evidence/export.zip
 ```
+
+`/api/event-feed` accepts `ip` (exact match), `category`, `risk`, `action`,
+`since` (Unix timestamp), `before` (row ID), and `limit` (1–500). It returns
+`events`, `total`, `has_more`, `next_before`, and a reset `generation`.
+`/api/events/export.csv` accepts the same evidence filters and exports all
+matching records, independent of the loaded page. `/api/sessions` accepts exact
+`ip` and `backend` filters. The detail endpoint accepts an optional `limit`;
+the live detail view requests the newest 100 records per section.
+
+`/api/alerts` uses `after` and `generation` to continue notifications across log
+resets. Settings checks 10 core endpoints and three source-specific endpoints
+when an attacker exists. `/api/health` verifies the dashboard and evidence
+database, not MQTT/ESP32/ThingSpeak availability.
+
+The only dashboard mutation is `POST /api/logs/clear` with JSON
+`{"confirm":"clear"}`, invoked through the confirmation dialog. Export required
+evidence before clearing. Browser appearance and interval settings are local
+preferences; they do not change scoring or broker configuration.
 
 ## Attack categories and decision flow
 

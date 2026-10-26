@@ -1,9 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Sessions{% endblock %}
 {% block content %}
-<header class="page-head"><div><div class="eyebrow">Connection ledger</div><h1>Sessions</h1><span class="muted">Recent routed sessions and selected device profiles.</span></div><div class="status-line">Latest {{ sessions|length }}</div></header>
-<section class="panel"><div class="table-wrap"><table class="sortable"><thead><tr><th data-sort>IP</th><th data-sort>Backend</th><th data-sort>Profile</th><th data-sort>Start</th><th data-sort>End</th><th data-sort>Duration</th></tr></thead><tbody>
-  {% for row in sessions %}<tr><td>{{ row.ip }}</td><td>{{ row.backend }}</td><td>{{ row.profile or '-' }}</td><td data-sort-value="{{ row.start }}">{{ '%.3f'|format(row.start) }}</td><td data-sort-value="{{ row.end or '' }}">{{ '%.3f'|format(row.end) if row.end else 'active' }}</td><td data-sort-value="{{ (row.end - row.start) if row.end else '' }}">{{ '%.3f s'|format(row.end - row.start) if row.end else 'active' }}</td></tr>
-  {% else %}<tr><td colspan="6" class="empty">No sessions recorded yet.</td></tr>{% endfor %}
-</tbody></table></div></section>
+<section class="panel"><header class="panel-heading"><div><h2>Connection ledger</h2><p><span id="session-ledger-count">{{ sessions|length }}</span> recent routed sessions</p></div><a href="{{ url_for('honeypot_page') }}">Decoy overview</a></header><div class="filters"><input id="session-ip-filter" placeholder="Exact source IP…" aria-label="Filter session source IP"><select id="backend-filter" aria-label="Filter session backend"><option value="">All backends</option><option value="real">Real broker</option><option value="decoy">Decoy broker</option></select><span class="status-line">Latest 500 matching sessions · updates automatically</span></div></section>
+<section class="panel"><div class="table-wrap"><table class="sortable"><thead><tr><th data-sort>Source IP</th><th data-sort>Backend</th><th data-sort>Profile</th><th data-sort>Start</th><th data-sort>End</th><th data-sort>Duration</th></tr></thead><tbody id="session-ledger"></tbody></table></div></section>
+<script id="initial-sessions" type="application/json">{{ sessions|tojson }}</script>
 {% endblock %}

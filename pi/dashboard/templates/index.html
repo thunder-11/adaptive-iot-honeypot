@@ -1,79 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Overview{% endblock %}
 {% block content %}
-<header class="page-head">
-  <div><div class="eyebrow">Live posture</div><h1>Overview</h1><span class="muted">Risk and attack telemetry across the honeypot.</span></div>
-  <div class="status-line">Refresh 3s · <span id="generated-at">{{ '%.3f'|format(stats.generated_at) }}</span></div>
-</header>
+<section class="threat-banner {% if stats.high_critical %}elevated{% endif %}" id="threat-banner"><div><span class="eyebrow" id="threat-label">● THREAT LEVEL · {{ 'ELEVATED' if stats.high_critical else 'NORMAL' }}</span><p id="threat-description">{{ 'High-risk clients detected — restrictions and decoy redirects are active.' if stats.high_critical else 'Monitoring MQTT traffic. No high-risk clients currently detected.' }}</p></div><div class="threat-summary"><div><span class="eyebrow">High / critical</span><strong id="banner-high">{{ stats.high_critical }}</strong></div><div><span class="eyebrow">Routed to decoy</span><strong id="banner-decoy">{{ stats.decoy_sessions }}</strong></div><div><span class="eyebrow">Snapshot</span><strong id="snapshot-time" style="font-size:11px">Live evidence</strong></div></div></section>
 <div class="stats">
-  <div class="stat"><span class="eyebrow">Total attackers</span><strong id="total-attackers">{{ stats.total_attackers }}</strong></div>
-  <div class="stat"><span class="eyebrow">High / critical</span><strong id="high-critical">{{ stats.high_critical }}</strong></div>
-  <div class="stat"><span class="eyebrow">Sessions</span><strong id="session-count">{{ stats.sessions }}</strong></div>
-  <div class="stat"><span class="eyebrow">Decoy hits</span><strong id="decoy-hits">{{ stats.decoy_hits }}</strong></div>
-  <div class="stat"><span class="eyebrow">First response p50</span><strong id="latency-p50">{{ '%.1f ms'|format(stats.first_high_critical_latency_ms.p50) if stats.first_high_critical_latency_ms.p50 is not none else '—' }}</strong></div>
-  <div class="stat"><span class="eyebrow">First response p95</span><strong id="latency-p95">{{ '%.1f ms'|format(stats.first_high_critical_latency_ms.p95) if stats.first_high_critical_latency_ms.p95 is not none else '—' }}</strong></div>
+{% for id,label,value,icon,caption in [('total-attackers','Total attackers',stats.total_attackers,'◎','Unique client IPs'),('high-critical','High / critical',stats.high_critical,'△','Restricted or redirected'),('session-count','Sessions',stats.sessions,'▦','Broker connections'),('decoy-hits','Decoy hits',stats.decoy_hits,'◉','Messages sent to decoy')] %}
+<div class="stat"><span class="eyebrow">{{ label }}</span><span class="stat-icon" aria-hidden="true">{{ icon }}</span><strong id="{{ id }}">{{ value }}</strong><div class="stat-footer"><span>{{ caption }}</span><svg class="sparkline" data-metric="{{ id }}" viewBox="0 0 110 26" role="img" aria-label="Recent {{ label|lower }} samples"><path fill="currentColor" opacity=".07" d="M0 23 L110 23 L110 26 L0 26Z"/><polyline fill="none" stroke="currentColor" stroke-width="1.3" points="0,23 110,23"/></svg></div></div>
+{% endfor %}
 </div>
-<section class="panel">
-  <h2>Real device / external LED</h2>
-  <div class="device-state">
-    <span class="led{% if stats.device_state and stats.device_state.led_on %} on{% endif %}" id="device-led" aria-label="External LED state"></span>
-    <div><strong id="device-lock">{% if stats.device_state %}{{ 'LOCKED' if stats.device_state.locked else 'UNLOCKED' }}{% else %}WAITING FOR DEVICE{% endif %}</strong><div class="status-line" id="device-detail">{% if stats.device_state %}LED {{ 'ON' if stats.device_state.led_on else 'OFF' }} · real path · {{ stats.device_state.source }}{% else %}No trusted status received yet{% endif %}</div></div>
-  </div>
-  <p class="muted">Only status published by a whitelisted device on the real broker path changes this indicator. Commands handled by the decoy cannot alter the physical LED.</p>
-  <div class="status-line">ThingSpeak: <strong id="thingspeak-state">{% if not stats.thingspeak_enabled %}disabled{% elif stats.thingspeak_status and stats.thingspeak_status.error %}error: {{ stats.thingspeak_status.error }}{% elif stats.thingspeak_status and stats.thingspeak_status.entry_id %}stored entry {{ stats.thingspeak_status.entry_id }}{% else %}enabled · waiting for first upload{% endif %}</strong></div>
-</section>
-<div class="grid">
-  <section class="panel"><h2>Risk distribution</h2><div class="distribution" id="risk-distribution">
-    {% for name, count in stats.risk_distribution.items() %}
-    <div class="distribution-row"><span class="{{ name }}">{{ name }}</span><strong>{{ count }}</strong><span class="track"><span class="bar risk-bar {{ name }}" style="width:{{ [count * 12, 100]|min }}%"></span></span></div>
-    {% endfor %}
-  </div></section>
-  <section class="panel"><h2>Attack distribution</h2><div class="distribution" id="attack-distribution">
-    {% for name, count in stats.attack_distribution.items() %}
-    <div class="distribution-row"><span>{{ name }}</span><strong>{{ count }}</strong><span class="track"><span class="bar" style="width:{{ [count * 12, 100]|min }}%"></span></span></div>
-    {% else %}<p class="empty">No classified attacks yet.</p>{% endfor %}
-  </div></section>
-</div>
-{% endblock %}
-{% block scripts %}
-<script>
-  (() => {
-    const setText = (id, value) => { document.getElementById(id).textContent = value; };
-    const renderDistribution = (target, entries, risks = false) => {
-      target.replaceChildren();
-      if (!entries.length) {
-        const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "No classified attacks yet."; target.appendChild(empty); return;
-      }
-      entries.forEach(([name, count]) => {
-        const row = document.createElement("div"); row.className = "distribution-row";
-        const nameNode = document.createElement("span"); nameNode.textContent = name; if (risks) nameNode.className = name;
-        const countNode = document.createElement("strong"); countNode.textContent = count;
-        const track = document.createElement("span"); track.className = "track";
-        const bar = document.createElement("span"); bar.className = risks ? `bar risk-bar ${name}` : "bar"; bar.style.width = `${Math.min(count * 12, 100)}%`;
-        track.appendChild(bar); row.append(nameNode, countNode, track); target.appendChild(row);
-      });
-    };
-    const refresh = async () => {
-      try {
-        const response = await fetch("{{ url_for('api_stats') }}", { cache: "no-store" });
-        if (!response.ok) return;
-        const stats = await response.json();
-        setText("total-attackers", stats.total_attackers); setText("high-critical", stats.high_critical);
-        setText("session-count", stats.sessions); setText("decoy-hits", stats.decoy_hits);
-        setText("latency-p50", stats.first_high_critical_latency_ms.p50 === null ? "—" : `${stats.first_high_critical_latency_ms.p50.toFixed(1)} ms`);
-        setText("latency-p95", stats.first_high_critical_latency_ms.p95 === null ? "—" : `${stats.first_high_critical_latency_ms.p95.toFixed(1)} ms`);
-        setText("generated-at", stats.generated_at.toFixed(3));
-        const device = stats.device_state, led = document.getElementById("device-led");
-        led.classList.toggle("on", Boolean(device && device.led_on));
-        setText("device-lock", device ? (device.locked ? "LOCKED" : "UNLOCKED") : "WAITING FOR DEVICE");
-        setText("device-detail", device ? `LED ${device.led_on ? "ON" : "OFF"} · real path · ${device.source}` : "No trusted status received yet");
-        const cloud = stats.thingspeak_status;
-        setText("thingspeak-state", !stats.thingspeak_enabled ? "disabled" : cloud?.error ? `error: ${cloud.error}` : cloud?.entry_id ? `stored entry ${cloud.entry_id}` : "enabled · waiting for first upload");
-        renderDistribution(document.getElementById("risk-distribution"), ["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((name) => [name, stats.risk_distribution[name]]), true);
-        renderDistribution(document.getElementById("attack-distribution"), Object.entries(stats.attack_distribution));
-      } catch (_) { /* retain the last good snapshot */ }
-    };
-    setInterval(refresh, 3000);
-  })();
-</script>
+<div class="grid wide"><section class="panel"><header class="panel-heading"><div><h2>Risk distribution</h2><p>Clients by current risk tier</p></div></header><div class="donut-layout"><div class="donut" id="risk-donut" role="img" aria-label="Risk distribution"><div class="donut-center"><b id="risk-total">{{ stats.total_attackers }}</b><span>CLIENTS</span></div></div><div class="risk-legend" id="risk-distribution"></div></div></section>
+<section class="panel"><header class="panel-heading"><div><h2>Attack categories</h2><p>Detected events by attack type · <span id="classified-events">{{ stats.classified_events }}</span> classified events</p></div></header><div class="category-chart" id="attack-event-distribution" aria-label="Classified event counts by category"></div></section></div>
+<section class="panel"><header class="panel-heading"><div><h2>Live event stream</h2><p>Newest first · last 15 signals</p></div><a href="{{ url_for('events_page') }}">View all events →</a></header><div class="table-wrap feed-scroll"><table><thead><tr><th>Time</th><th>Source IP</th><th>Category</th><th>Signal</th><th>Points</th><th>Score</th><th>Action</th></tr></thead><tbody id="overview-events"><tr><td colspan="7" class="empty">Loading recorded events…</td></tr></tbody></table></div></section>
+<div class="grid"><section class="panel"><header class="panel-heading"><div><h2>Real device / external LED</h2><p>Trusted device telemetry</p></div></header><div class="device-state"><span class="led{% if stats.device_state and stats.device_state.led_on %} on{% endif %}" id="device-led" aria-label="External LED state"></span><div><strong id="device-lock">{{ ('LOCKED' if stats.device_state.locked else 'UNLOCKED') if stats.device_state else 'WAITING FOR DEVICE' }}</strong><div class="status-line" id="device-detail">Only trusted real-broker telemetry updates this state.</div></div></div><p class="muted">ThingSpeak: <span id="thingspeak-state">{{ 'enabled' if stats.thingspeak_enabled else 'disabled' }}</span></p></section>
+<section class="panel"><header class="panel-heading"><div><h2>Response & evidence</h2><p>Observed measurements across the honeypot</p></div></header><div class="metric-strip"><div><span class="eyebrow">First response p50</span><strong id="latency-p50">—</strong></div><div><span class="eyebrow">First response p95</span><strong id="latency-p95">—</strong></div></div><span class="status-line">Time from first observation to first high / critical response.</span></section></div>
+<script id="initial-stats" type="application/json">{{ stats|tojson }}</script>
 {% endblock %}
