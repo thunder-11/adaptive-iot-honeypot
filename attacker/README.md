@@ -39,7 +39,13 @@ and sends **lock**. It can physically lock an unlocked device. The original
 `attack.py` remains the combined decoy/unlock demonstration.
 
 For a laptop-only stack (`PI_IP=127.0.0.1`), each file automatically binds a
-different loopback address, `127.0.0.2` through `127.0.0.10`. Keep these addresses
+different loopback address, starting at `127.0.0.2` through `127.0.0.10`.
+If that source already has evidence or risk, automatic local runs choose an unused
+address (for example `127.0.1.2` for another brute-force trial). This avoids old
+decoy routing and failed-auth caps without deleting evidence. Each new source adds
+a unique attacker; category counts increase only when new detections are verified.
+An explicit `--source-ip` keeps the requested address and its existing history.
+Keep these addresses
 out of `WHITELIST_IPS`, `BLACKLIST_IPS`, and `DECOY_FORCE_IPS`. For a separate
 attacker laptop, set its `config.env` to the Pi address and matching credentials;
 omit `--source-ip` so its actual LAN address is used. Local loopback aliases

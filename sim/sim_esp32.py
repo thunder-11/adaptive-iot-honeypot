@@ -37,7 +37,7 @@ class DoorSimulator:
     def publish_status(self) -> None:
         payload = json.dumps({
             "locked": self.locked,
-            "led_on": self.locked,
+            "led_on": not self.locked,
             "source": "sim-esp32",
         })
         self.client.publish("home/door/status", payload, retain=True)
@@ -61,8 +61,12 @@ class DoorSimulator:
     def run(self) -> None:
         self.client.connect(self.config["PI_IP"], integer(self.config, "PROXY_PORT"), 30)
         self.client.loop_start()
+        last_status = time.monotonic()
         try:
             while True:
+                if time.monotonic() - last_status >= 10:
+                    self.publish_status()
+                    last_status = time.monotonic()
                 motion = random.choice([0, 0, 0, 1])
                 self.client.publish("home/door/motion", str(motion))
                 print(f"motion={motion}", flush=True)

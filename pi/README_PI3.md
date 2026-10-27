@@ -6,6 +6,8 @@ GPIO libraries, machine-learning runtime, or compiled Python extensions are need
 by the application. Pi 3 A+ has less RAM: use Lite and start with a small demo;
 its capacity has not been measured. Physical Pi/ARM testing is still required.
 
+For the short physical-demo sequence, use [DEMO_CHECKLIST.md](../DEMO_CHECKLIST.md).
+
 ## Prepare the kit
 
 1. Use Raspberry Pi Imager, select your actual Pi 3 model, and install **Raspberry
@@ -60,10 +62,12 @@ Passwords must follow the shell-safe restrictions in the main README.
 
 ```bash
 bash pi/setup_pi.sh
-.venv/bin/python pi/check_pi.py
+.venv/bin/python pi/check_pi.py --hardware
 .venv/bin/python -m pytest -q
 bash pi/run_all.sh
-.venv/bin/python pi/check_pi.py --running
+.venv/bin/python pi/check_pi.py --hardware --running
+# After the ESP32 connects:
+.venv/bin/python pi/check_pi.py --hardware --running --device
 ```
 
 Setup needs Internet for apt/pip and sudo access. It disables the system

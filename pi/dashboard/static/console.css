@@ -105,6 +105,7 @@ body{font-family:"Segoe UI",Arial,sans-serif;font-size:12px;font-weight:400}a{te
 .source-badge.offline{color:var(--high);border-color:var(--high)}
 .connection-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .connection-banner #connection-message{flex:1;min-width:200px}
+@media(max-width:860px){.shell,.collapsed .shell{grid-template-columns:minmax(0,1fr)}.sidebar{min-width:0}}
 .pagination-controls{justify-content:space-between;margin:12px 0 18px}
 .toast{position:relative;padding-right:32px;overflow-wrap:anywhere}
 .toast-close{position:absolute;right:6px;top:5px;border:0;background:transparent;color:var(--muted);font-size:20px}

@@ -45,6 +45,21 @@ def snapshot(url: str, ip: str) -> dict:
         raise
 
 
+def fresh_loopback_source(url: str, preferred: str, config: dict) -> tuple[str, dict]:
+    """Keep automatic local trials independent of saved scores and auth caps."""
+    excluded = set().union(*(addresses(config, key) for key in
+                             ("WHITELIST_IPS", "BLACKLIST_IPS", "DECOY_FORCE_IPS")))
+    suffix = preferred.rsplit(".", 1)[1]
+    for subnet in range(256):
+        candidate = f"127.0.{subnet}.{suffix}"
+        if candidate in excluded:
+            continue
+        before = snapshot(url, candidate)
+        if not before["timeline"] and not before["attack_count"] and not before["current_score"]:
+            return candidate, before
+    raise RuntimeError("No unused loopback source remains for this scenario; specify --source-ip.")
+
+
 def run_traffic(name: str, config: dict, source: str) -> None:
     host, port = config["PI_IP"], integer(config, "PROXY_PORT")
 
@@ -147,16 +162,26 @@ def main(name: str) -> int:
     # UDP route lookup obtains the actual local address without sending MQTT traffic.
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
         route.connect((host, integer(config, "PROXY_PORT")))
-        source = args.source_ip or (loopback if route.getsockname()[0].startswith("127.") else route.getsockname()[0])
+        local_demo = host in {"127.0.0.1", "localhost"} and route.getsockname()[0].startswith("127.")
+        source = args.source_ip or (loopback if local_demo else route.getsockname()[0])
     if source in addresses(config, "WHITELIST_IPS"):
         parser.error("Use a non-whitelisted source, including for the benign control experiment.")
     url = args.dashboard_url or f"http://{host}:{config['DASH_PORT']}"
     output = args.output or ROOT / "data" / "demo-results" / f"{name}-{time.time_ns()}.json"
-    print(f"Authorized lab demo: {name}; source={source}; proxy={host}:{config['PROXY_PORT']}")
     report = {"scenario": name, "source_ip": source, "expected_signal": signal,
               "started_at": time.time(), "verified": False}
     try:
-        before = snapshot(url, source)
+        if local_demo and not args.source_ip:
+            source, before = fresh_loopback_source(url, loopback, config)
+            report["source_ip"] = source
+        else:
+            before = snapshot(url, source)
+        print(f"Authorized lab demo: {name}; source={source}; proxy={host}:{config['PROXY_PORT']}")
+        if name == "brute_force" and (before.get("current_action") == "decoy" or any(
+                event.get("signal") == "failed_auth" for event in before["timeline"])):
+            raise RuntimeError("This source already has failed-auth history or decoy routing. "
+                               "Export evidence, use Clear logs + scores, wait two seconds, then retry; "
+                               "or choose an unused local source IP.")
         watermark = max((event["rowid"] for event in before["timeline"]), default=0)
         report["attack_count_before"] = before["attack_count"]
         run_traffic(name, config, source)

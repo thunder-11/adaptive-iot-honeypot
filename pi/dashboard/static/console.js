@@ -47,7 +47,8 @@
     }
     for(const q of ['p50','p95'])text(`latency-${q}`,s.first_high_critical_latency_ms[q]===null?'—':`${s.first_high_critical_latency_ms[q].toFixed(1)} ms`);
     const device=s.device_state; $('device-led')?.classList.toggle('on',Boolean(device?.led_on));
-    text('device-lock',device?(device.locked?'LOCKED':'UNLOCKED'):'WAITING FOR DEVICE');text('device-detail',device?`LED ${device.led_on?'ON':'OFF'} · real path · ${device.source}`:'No trusted status received yet.');
+    $('device-led')?.setAttribute('aria-label',device?`External LED ${device.led_on?'on':'off'}`:'External LED state unknown');
+    text('device-lock',device?(device.locked?'LOCKED':'UNLOCKED'):'WAITING FOR DEVICE');text('device-detail',device?`LED ${device.led_on?'ON':'OFF'} · ${device.source} · ${s.device_online?'live real path':`last known state · no status for ${Math.floor(s.device_age_seconds)} s`}`:'No trusted status received yet.');
     const cloud=s.thingspeak_status;text('thingspeak-state',!s.thingspeak_enabled?'disabled':cloud?.error?`error: ${cloud.error}`:cloud?.entry_id?`stored entry ${cloud.entry_id}`:'enabled · waiting for first upload');
   }
   if(initial('initial-stats'))renderStats(initial('initial-stats'));

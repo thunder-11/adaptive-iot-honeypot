@@ -11,11 +11,8 @@ if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
   echo "Python 3.11+ required. Install Raspberry Pi OS Lite Bookworm or newer." >&2
   exit 1
 fi
-CONFIG="$ROOT/config.env"
-set -a
-# shellcheck disable=SC1090
-source "$CONFIG"
-set +a
+CONFIG_EXPORTS="$(python3 "$ROOT/pi/config.py" --shell)"
+eval "$CONFIG_EXPORTS"
 
 sudo apt-get update
 sudo apt-get install -y mosquitto mosquitto-clients openssl python3-venv

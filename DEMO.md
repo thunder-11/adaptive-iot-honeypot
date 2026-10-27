@@ -61,7 +61,7 @@ Follow this checklist in order. Replace example network values with the values a
    https://espressif.github.io/arduino-esp32/package_esp32_index.json
    ```
 
-2. In Boards Manager install **esp32 by Espressif Systems**. In Library Manager install **PubSubClient by Nick O'Leary**. Install **DHT sensor library by Adafruit** and **Adafruit Unified Sensor** only if using `DHT11`.
+2. In Boards Manager install **esp32 by Espressif Systems**. In Library Manager install **PubSubClient by Nick O'Leary**. Install **DHT sensor library by Adafruit** and **Adafruit Unified Sensor** only if using `DHT11_SENSOR`.
 
 3. Copy `esp32/esp32_node/secrets.h.example` to `esp32/esp32_node/secrets.h`. Enter Wi-Fi credentials and the MQTT password in that ignored local file. Open `esp32/esp32_node/esp32_node.ino` and set the Pi address, MQTT username, static IP, gateway, subnet, and pins in its top config block. Match `config.env`, then select the connected ESP32 board and port.
 
@@ -78,8 +78,8 @@ Follow this checklist in order. Replace example network values with the values a
    | Button (`BUTTON`) | GPIO 27 | Other leg to GND; internal pull-up is enabled |
    | PIR (`PIR`) | GPIO 27 | OUT to GPIO 27, VCC/GND per module rating |
    | Reed switch (`REED`) | GPIO 27 | Other leg to GND; internal pull-up is enabled |
-   | DHT11 data (`DHT11`) | GPIO 27 | VCC to 3.3 V, GND to GND; bare sensor needs ~10 kΩ pull-up |
-   | LDR (`LDR`) | GPIO 27 | Use as midpoint of a 3.3 V resistor divider; never exceed 3.3 V |
+   | DHT11 data (`DHT11_SENSOR`) | GPIO 27 | VCC to 3.3 V, GND to GND; bare sensor needs ~10 kΩ pull-up |
+   | LDR (`LDR`) | GPIO 34 (ADC1) | Use as midpoint of a 3.3 V resistor divider; never exceed 3.3 V |
    | Relay IN | GPIO 26 | Set `RELAY_ACTIVE_LOW` to match the module |
    | Relay GND | GND | Pi, ESP32, and external driver supply grounds must be common where required |
    | Status LED | GPIO 2 | Built-in LED on many boards; otherwise LED plus resistor to GND |
@@ -103,7 +103,7 @@ On the Pi, load config values and subscribe:
 
 ```bash
 cd ~/adaptive-iot-honeypot
-set -a; source config.env; set +a
+eval "$(.venv/bin/python pi/config.py --shell)"
 mosquitto_sub -h "$PI_IP" -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t 'home/door/#' -v
 ```
 
@@ -112,7 +112,7 @@ Expected: `home/door/motion` every two seconds and a retained `home/door/status`
 In a second Pi terminal, test both commands:
 
 ```bash
-set -a; source config.env; set +a
+eval "$(.venv/bin/python pi/config.py --shell)"
 mosquitto_pub -h "$PI_IP" -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t home/door/lock -m unlock
 mosquitto_pub -h "$PI_IP" -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t home/door/lock -m lock
 ```

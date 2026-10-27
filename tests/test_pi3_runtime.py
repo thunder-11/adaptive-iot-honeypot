@@ -7,6 +7,7 @@ import pytest
 from pi.check_pi import validate, wait_port
 from pi.config import load_config
 from pi.proxy import proxy as proxy_module
+from attacker.attack import publish_packet, subscribe_packet
 
 
 @pytest.mark.parametrize("changes", [
@@ -24,6 +25,25 @@ def test_preflight_rejects_unusable_config(changes):
 
 def test_preflight_defaults_are_valid():
     assert validate(load_config()) == []
+
+
+@pytest.mark.parametrize("changes", [
+    {"MEDIUM": "60"}, {"CRITICAL": "nan"}, {"WEIGHT_FAILED_AUTH": "-8"},
+    {"DECAY_POINTS_PER_SEC": "nan"}, {"PUBLISH_LIMIT": "0"},
+    {"CONNECTION_WINDOW_SEC": "inf"}, {"SCORE_CHECKPOINT_SEC": "0"},
+])
+def test_preflight_rejects_broken_scoring_controls(changes):
+    assert validate(load_config() | changes)
+
+
+def test_hardware_preflight_catches_loopback_and_routing_mismatches():
+    config = load_config() | {"PI_IP": "192.168.1.10", "ESP32_IP": "192.168.1.50",
+                              "WHITELIST_IPS": "127.0.0.1,192.168.1.50"}
+    assert validate(config, hardware=True) == []
+    for changes in ({"PI_IP": "127.0.0.1"}, {"WHITELIST_IPS": "127.0.0.1"},
+                    {"DECOY_FORCE_IPS": "192.168.1.50"},
+                    {"TLS_CERT_PATH": "cert", "TLS_KEY_PATH": "key"}):
+        assert validate(config | changes, hardware=True)
 
 
 def make_proxy(monkeypatch):
@@ -120,3 +140,31 @@ def test_wait_port_times_out_on_refused_connection(monkeypatch):
     monkeypatch.setattr("pi.check_pi.socket.create_connection", refuse)
     monkeypatch.setattr("pi.check_pi.time.sleep", lambda delay: None)
     assert not wait_port(1883, 0.001)
+
+
+def test_critical_disconnect_preserves_existing_decoy_sessions(monkeypatch):
+    proxy = make_proxy(monkeypatch)
+    ip = "192.0.2.50"
+    real, decoy = Writer(), Writer()
+    proxy.connections[ip].update((real, decoy))
+    proxy.decoy_connections.add(decoy)
+    proxy.scorer.seed(ip, 100)
+    asyncio.run(proxy.disconnect_ip_if_critical(ip))
+    assert real.closed
+    assert not decoy.closed
+
+
+def test_trusted_controls_and_subscriptions_do_not_count_as_attacks(monkeypatch):
+    proxy = make_proxy(monkeypatch)
+    recorded = []
+    monkeypatch.setattr(proxy, "log_event", lambda *a, **kw: recorded.append(kw))
+    async def exercise():
+        assert await proxy.inspect_client_packet(subscribe_packet("home/door/#"), "127.0.0.1", "real")
+        assert await proxy.inspect_client_packet(publish_packet("home/door/lock", "unlock"), "127.0.0.1", "real")
+        reader = asyncio.StreamReader()
+        reader.feed_data(b"\x20\x02\x00\x05")
+        reader.feed_eof()
+        await proxy.pipe_backend(reader, Writer(), "127.0.0.1", "real")
+    asyncio.run(exercise())
+    assert recorded
+    assert all(not row.get("signal") and not row.get("points") for row in recorded)

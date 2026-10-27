@@ -27,6 +27,15 @@ def test_proxy_restart_restores_checkpointed_score_with_decay(monkeypatch):
     assert restarted.scorer.action("10.0.0.8") == "throttle"
 
 
+def test_clock_correction_after_restart_cannot_increase_saved_risk(monkeypatch):
+    monkeypatch.setattr(proxy_module.db, "restore_scores", lambda: [
+        {"ip": "192.0.2.8", "current_score": 25, "last_seen": 200}])
+    monkeypatch.setattr(proxy_module.db, "system_state", lambda key: "")
+    monkeypatch.setattr(proxy_module.time, "time", lambda: 100)
+    proxy = proxy_module.Proxy(load_config())
+    assert proxy.scorer.score("192.0.2.8") == pytest.approx(25, abs=0.01)
+
+
 def test_tls_context_is_optional_and_loads_configured_paths(monkeypatch):
     assert proxy_module.tls_server_context({"TLS_CERT_PATH": "", "TLS_KEY_PATH": ""}) is None
     with pytest.raises(ValueError):

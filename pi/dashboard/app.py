@@ -164,6 +164,7 @@ def stats_payload() -> dict[str, object]:
     first_seen = {str(row["ip"]): float(row["first_seen"]) for row in attackers}
     response_latencies = first_high_critical_latencies(response_events, first_seen)
     device_rows = query("SELECT * FROM device_state WHERE id = 1")
+    device_age = max(0.0, time.time() - device_rows[0]["time"]) if device_rows else None
     cloud_rows = query("SELECT * FROM cloud_status WHERE id = 1")
     return {
         "total_attackers": len(attackers),
@@ -182,6 +183,8 @@ def stats_payload() -> dict[str, object]:
             "samples": len(response_latencies),
         },
         "device_state": device_rows[0] if device_rows else None,
+        "device_age_seconds": round(device_age, 1) if device_age is not None else None,
+        "device_online": device_age is not None and device_age <= 30,
         "thingspeak_status": cloud_rows[0] if cloud_rows else None,
         "thingspeak_enabled": config.get("THINGSPEAK_ENABLED", "false").lower()
         in {"1", "true", "yes", "on"} and bool(config.get("THINGSPEAK_WRITE_API_KEY", "").strip()),

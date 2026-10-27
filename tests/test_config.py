@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from pi.config import load_config
+import shlex
+
+import pytest
+
+from pi.config import load_config, shell_exports
 
 
 def test_config_accepts_windows_bom_crlf_and_environment_override(monkeypatch):
@@ -30,3 +34,11 @@ def test_decoy_broker_defaults_to_loopback_and_templates_are_configurable():
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     assert "@DECOY_BIND_IP@" in docker_template
     assert "DECOY_BIND_IP: 0.0.0.0" in compose
+
+
+def test_shell_exports_quote_literal_values_and_reject_shell_keys():
+    values = {"PASSWORD": "literal $(whoami) ' quoted", "EMPTY": ""}
+    for line, (key, value) in zip(shell_exports(values).splitlines(), values.items()):
+        assert shlex.split(line) == ["export", f"{key}={value}"]
+    with pytest.raises(ValueError):
+        shell_exports({"BAD;command": "value"})

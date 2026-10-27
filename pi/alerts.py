@@ -32,11 +32,14 @@ class AlertManager:
         now = time.time()
         if now - self.last_sent.get(key, 0.0) < self.cooldown:
             return False
-        self.last_sent[key] = now
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
         line = json.dumps({"time": now, **payload}, sort_keys=True)
-        with self.log_path.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
+        try:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_path.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except OSError as exc:
+            LOGGER.error("could not write security alert: %s", exc)
+        self.last_sent[key] = now
         LOGGER.warning("security alert %s", line)
         if self.webhook:
             threading.Thread(target=self._post, args=(line.encode(),), daemon=True).start()

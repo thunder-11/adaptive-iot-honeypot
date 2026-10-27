@@ -28,3 +28,12 @@ def test_alert_log_and_cooldown():
     assert not manager.emit({"ip": "10.0.0.3", "action": "throttle", "score": 25})
     payload = json.loads(log.read_text(encoding="utf-8"))
     assert payload["ip"] == "10.0.0.2"
+
+
+def test_alert_log_failure_does_not_interrupt_mqtt(tmp_path, monkeypatch):
+    manager = AlertManager({"ALERT_ENABLED": "true", "ALERT_MIN_ACTION": "restrict",
+                            "ALERT_COOLDOWN_SEC": "30"}, tmp_path)
+    def denied(*args, **kwargs):
+        raise PermissionError("read-only SD card")
+    monkeypatch.setattr(Path, "open", denied)
+    assert manager.emit({"ip": "192.0.2.5", "action": "restrict", "score": 45})

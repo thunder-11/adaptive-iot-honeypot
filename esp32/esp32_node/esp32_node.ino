@@ -2,8 +2,8 @@
  * Adaptive IoT Honeypot door node.
  *
  * External LED convention:
- *   LED ON  = LOCKED
- *   LED OFF = UNLOCKED
+ *   LED OFF = LOCKED
+ *   LED ON  = UNLOCKED
  */
 
 #include <WiFi.h>
@@ -40,6 +40,8 @@ IPAddress DNS_SERVER(8, 8, 8, 8);
 
 // ESP32 GPIO pins
 const int SENSOR_PIN = 27;
+// Classic ESP32: ADC1 works while Wi-Fi is active; GPIO27 belongs to ADC2.
+const int LDR_PIN = 34;
 const int RELAY_PIN = 26;
 const int STATUS_LED_PIN = 2;
 
@@ -63,9 +65,11 @@ PubSubClient mqtt(networkClient);
 unsigned long lastWifiAttempt = 0;
 unsigned long lastMqttAttempt = 0;
 unsigned long lastSensorPublish = 0;
+unsigned long lastStatusPublish = 0;
+bool statusPending = true;
 
 bool locked = true;
-bool ledOn = true;
+bool ledOn = false;
 
 void driveRelay(bool shouldLock) {
   locked = shouldLock;
@@ -84,9 +88,9 @@ void driveRelay(bool shouldLock) {
   digitalWrite(RELAY_PIN, relayLevel);
 
   // Demo convention:
-  // LOCKED   = LED ON
-  // UNLOCKED = LED OFF
-  ledOn = shouldLock;
+  // LOCKED   = LED OFF
+  // UNLOCKED = LED ON
+  ledOn = !shouldLock;
 
   int ledLevel;
 
@@ -114,21 +118,24 @@ void publishStatus() {
   if (locked) {
     payload =
       "{\"locked\":true,"
-      "\"led_on\":true,"
+      "\"led_on\":false,"
       "\"source\":\"esp32\"}";
   } else {
     payload =
       "{\"locked\":false,"
-      "\"led_on\":false,"
+      "\"led_on\":true,"
       "\"source\":\"esp32\"}";
   }
 
   bool published = mqtt.publish(STATUS_TOPIC, payload, true);
 
   if (published) {
+    statusPending = false;
+    lastStatusPublish = millis();
     Serial.print("Status published: ");
     Serial.println(payload);
   } else {
+    statusPending = true;
     Serial.println("Failed to publish device status");
   }
 }
@@ -138,7 +145,11 @@ void onMessage(
   byte* payload,
   unsigned int length
 ) {
+  if (String(topic) != COMMAND_TOPIC || length > 32) {
+    return;
+  }
   String command;
+  command.reserve(length);
 
   for (unsigned int i = 0; i < length; i++) {
     command += static_cast<char>(payload[i]);
@@ -151,10 +162,6 @@ void onMessage(
   Serial.print(topic);
   Serial.print(": ");
   Serial.println(command);
-
-  if (String(topic) != COMMAND_TOPIC) {
-    return;
-  }
 
   if (command == "lock") {
     driveRelay(true);
@@ -263,6 +270,8 @@ void startMqttIfNeeded() {
       Serial.println(COMMAND_TOPIC);
     } else {
       Serial.println("Failed to subscribe to command topic");
+      mqtt.disconnect();
+      return;
     }
 
     publishStatus();
@@ -273,7 +282,12 @@ void startMqttIfNeeded() {
 }
 
 String readSensor() {
-#if SENSOR_TYPE == BUTTON || SENSOR_TYPE == PIR || SENSOR_TYPE == REED
+#if SENSOR_TYPE == BUTTON || SENSOR_TYPE == REED
+
+  // Pull-up inputs read LOW when the button/contact closes to GND.
+  return digitalRead(SENSOR_PIN) == LOW ? "1" : "0";
+
+#elif SENSOR_TYPE == PIR
 
   return digitalRead(SENSOR_PIN) == HIGH ? "1" : "0";
 
@@ -295,7 +309,7 @@ String readSensor() {
 
 #elif SENSOR_TYPE == LDR
 
-  return String(analogRead(SENSOR_PIN));
+  return String(analogRead(LDR_PIN));
 
 #else
 
@@ -305,6 +319,9 @@ String readSensor() {
 }
 
 void configurePins() {
+  // Preload inactive output levels before enabling the relay/LED outputs.
+  digitalWrite(RELAY_PIN, RELAY_ACTIVE_LOW ? HIGH : LOW);
+  digitalWrite(STATUS_LED_PIN, LED_ACTIVE_HIGH ? LOW : HIGH);
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(STATUS_LED_PIN, OUTPUT);
 
@@ -322,7 +339,7 @@ void configurePins() {
 
 #elif SENSOR_TYPE == LDR
 
-  pinMode(SENSOR_PIN, INPUT);
+  pinMode(LDR_PIN, INPUT);
 
 #endif
 }
@@ -346,6 +363,7 @@ void setup() {
   mqtt.setCallback(onMessage);
   mqtt.setBufferSize(512);
   mqtt.setKeepAlive(30);
+  mqtt.setSocketTimeout(3);
 
   startWifiIfNeeded();
 }
@@ -370,6 +388,11 @@ void loop() {
   }
 
   unsigned long now = millis();
+
+  // Refresh the retained state and retry a status publish lost during reconnect.
+  if (mqtt.connected() && now - lastStatusPublish >= (statusPending ? 2000UL : 10000UL)) {
+    publishStatus();
+  }
 
   if (
     mqtt.connected() &&

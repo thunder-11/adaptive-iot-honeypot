@@ -84,10 +84,20 @@ EVENT_COLUMNS = {
 SESSION_COLUMNS = {"profile": "TEXT NOT NULL DEFAULT ''"}
 
 
+class ClosingConnection(sqlite3.Connection):
+    """Commit/rollback and release the file handle when leaving a with block."""
+
+    def __exit__(self, *args):
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
 def connect(path: Path = DEFAULT_DB) -> sqlite3.Connection:
     """Open a concurrency-friendly database connection and ensure the schema."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path, timeout=5.0)
+    connection = sqlite3.connect(path, timeout=5.0, factory=ClosingConnection)
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA busy_timeout=5000")
     connection.executescript(SCHEMA)

@@ -155,3 +155,18 @@ def test_stats_reuses_one_read_connection(evidence, monkeypatch):
     monkeypatch.setattr(db, "connect", connect)
     assert client.get("/api/stats").status_code == 200
     assert len(calls) == 1
+
+
+def test_device_status_distinguishes_fresh_from_stale_telemetry(evidence):
+    client, path, _ = evidence
+    db.update_device_state(time.time() - 60, "192.168.1.50", True, False, "esp32", path)
+    stale = client.get("/api/stats").get_json()
+    assert stale["device_state"]["locked"] == 1
+    assert stale["device_online"] is False
+    assert stale["device_age_seconds"] >= 60
+    db.update_device_state(time.time(), "192.168.1.50", False, True, "esp32", path)
+    fresh = client.get("/api/stats").get_json()
+    assert fresh["device_online"] is True
+    assert fresh["device_state"]["led_on"] == 1
+    html = client.get("/").data
+    assert html.index(b'id="real-device-status"') < html.index(b'class="stats"')

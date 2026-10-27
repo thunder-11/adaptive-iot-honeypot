@@ -7,10 +7,8 @@ if [[ "$EUID" -eq 0 ]]; then
   echo "Run as your normal Pi user: bash pi/run_all.sh" >&2
   exit 1
 fi
-set -a
-# shellcheck disable=SC1090
-source "$ROOT/config.env"
-set +a
+CONFIG_EXPORTS="$(python3 "$ROOT/pi/config.py" --shell)"
+eval "$CONFIG_EXPORTS"
 VENV="$ROOT/.venv"
 LOGS="$ROOT/logs"
 RUN="$ROOT/run"
@@ -41,7 +39,10 @@ start_process() {
   local name="$1"
   shift
   nohup "$@" >"$LOGS/$name.log" 2>&1 &
-  echo $! >"$RUN/$name.pid"
+  local service_pid=$!
+  echo "$service_pid" >"$RUN/$name.pid"
+  # Linux start ticks distinguish this process from a reused PID after reboot.
+  awk '{print $22}' "/proc/$service_pid/stat" >"$RUN/$name.start"
   sleep 1
   if ! kill -0 "$(cat "$RUN/$name.pid")" 2>/dev/null; then
     echo "$name failed to start; inspect $LOGS/$name.log" >&2

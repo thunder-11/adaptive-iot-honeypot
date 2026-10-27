@@ -1,5 +1,7 @@
 # Adaptive IoT Honeypot with Risk-Based Traffic Redirection
 
+For the physical Pi + ESP32 demonstration, start with [the demo checklist](DEMO_CHECKLIST.md).
+
 For device-by-device commands, first-time setup, daily startup, and Windows
 fallbacks with either the real ESP32 or a simulator, use the
 [complete startup guide](STARTUP_GUIDE.md).
@@ -172,9 +174,7 @@ Also open the ThingSpeak channel's **Private View**. The dashboard has a persist
 
 ```bash
 cd ~/adaptive-iot-honeypot
-set -a
-source config.env
-set +a
+eval "$(.venv/bin/python pi/config.py --shell)"
 mosquitto_sub -h 127.0.0.1 -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t 'home/door/#' -v
 ```
 
@@ -186,9 +186,7 @@ Load the configuration once in this terminal:
 
 ```bash
 cd ~/adaptive-iot-honeypot
-set -a
-source config.env
-set +a
+eval "$(.venv/bin/python pi/config.py --shell)"
 ```
 
 Legitimate unlock command:
@@ -335,7 +333,7 @@ mosquitto_sub -h 127.0.0.1 -p 1883 -u "$REAL_USER" -P "$REAL_PASS" -t 'home/door
 .venv/bin/python pi/analysis/analyze.py
 ```
 
-Shell variables are available after `set -a; source config.env; set +a`. Open `http://127.0.0.1:5000`. The simulator should continue printing motion, its relay file should stay `LOCKED`, and the attacker should show four completed stages. Depending on timing, the timeline shows `allow → throttle → restrict → decoy` and the relevant attack categories.
+Shell variables are available after `eval "$(.venv/bin/python pi/config.py --shell)"`. Open `http://127.0.0.1:5000`. The simulator should continue printing motion, its relay file should stay `LOCKED`, and the attacker should show four completed stages. Depending on timing, the timeline shows `allow → throttle → restrict → decoy` and the relevant attack categories.
 
 ## Tests and analysis
 
@@ -403,7 +401,7 @@ Then set `THINGSPEAK_ENABLED=true`, `THINGSPEAK_WRITE_API_KEY=<channel write key
 
 ### External LED demonstration
 
-The ESP32 sketch uses `STATUS_LED_PIN` (GPIO 2 by default) with the convention **LED ON = LOCKED** and **LED OFF = UNLOCKED**. Connect an external LED through a suitable current-limiting resistor and change `STATUS_LED_PIN` if GPIO 2 is unsuitable for your board. `LED_ACTIVE_HIGH` supports either wiring polarity.
+The ESP32 sketch uses `STATUS_LED_PIN` (GPIO 2 by default) with the convention **LED OFF = LOCKED** and **LED ON = UNLOCKED**. Connect an external LED through a suitable current-limiting resistor and change `STATUS_LED_PIN` if GPIO 2 is unsuitable for your board. `LED_ACTIVE_HIGH` supports either wiring polarity.
 
 For the demo, send a legitimate `lock` or `unlock` command through the proxy and observe the physical LED plus the Overview device card change. On Windows with the default configuration, for example:
 

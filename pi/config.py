@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shlex
 from pathlib import Path
 from typing import Mapping
 
@@ -41,4 +43,22 @@ def addresses(config: Mapping[str, str], key: str) -> set[str]:
 
 def boolean(config: Mapping[str, str], key: str, default: bool = False) -> bool:
     return config.get(key, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def shell_exports(config: Mapping[str, str]) -> str:
+    """Quote parsed values for Bash, accepting the same BOM/CRLF as Python."""
+    for key in config:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            raise ValueError(f"Invalid configuration key: {key!r}")
+    return "\n".join(f"export {key}={shlex.quote(value)}" for key, value in config.items())
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Export project configuration for Bash")
+    parser.add_argument("--shell", action="store_true", required=True)
+    parser.add_argument("--path", type=Path, default=CONFIG_PATH)
+    args = parser.parse_args()
+    print(shell_exports(load_config(args.path)))
 

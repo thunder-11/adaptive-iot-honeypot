@@ -10,8 +10,11 @@ function Import-ConfigEnv {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "Configuration file not found: $Path"
     }
+    # .NET resolves relative paths against its process directory, which can
+    # differ from PowerShell's current location after Set-Location.
+    $resolvedPath = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).ProviderPath
     $values = @{}
-    foreach ($rawLine in [System.IO.File]::ReadAllLines($Path)) {
+    foreach ($rawLine in [System.IO.File]::ReadAllLines($resolvedPath)) {
         $line = $rawLine.Trim()
         if (-not $line -or $line.StartsWith('#') -or -not $line.Contains('=')) {
             continue

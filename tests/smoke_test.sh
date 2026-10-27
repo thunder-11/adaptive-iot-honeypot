@@ -2,10 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-set -a
-# shellcheck disable=SC1090
-source "$ROOT/config.env"
-set +a
+cd "$ROOT"
+CONFIG_EXPORTS="$(python3 "$ROOT/pi/config.py" --shell)"
+eval "$CONFIG_EXPORTS"
 ATTACK_IP="127.0.0.2"
 SIM_PID=""
 
@@ -24,7 +23,8 @@ if [[ ",$WHITELIST_IPS," == *",$ATTACK_IP,"* ]]; then
   exit 1
 fi
 
-rm -f "$ROOT/data/honeypot.db" "$ROOT/sim/relay_state.txt"
+bash "$ROOT/pi/stop_all.sh"
+rm -f "$ROOT/data/honeypot.db" "$ROOT/data/honeypot.db-wal" "$ROOT/data/honeypot.db-shm" "$ROOT/sim/relay_state.txt"
 bash "$ROOT/pi/run_all.sh"
 "$ROOT/.venv/bin/python" "$ROOT/sim/sim_esp32.py" >"$ROOT/logs/simulator.log" 2>&1 &
 SIM_PID=$!

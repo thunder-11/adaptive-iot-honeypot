@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import signal
 import ssl
 import sys
@@ -101,6 +102,7 @@ class Proxy:
             )
         )
         self.connections: dict[str, set[asyncio.StreamWriter]] = defaultdict(set)
+        self.decoy_connections: set[asyncio.StreamWriter] = set()
         self.server: asyncio.Server | None = None
         self.max_connections = int(config.get("MAX_CONNECTIONS", "32"))
         self.connect_timeout = float(config.get("CONNECT_TIMEOUT_SEC", "15"))
@@ -114,7 +116,7 @@ class Proxy:
         now = time.time()
         for row in db.restore_scores():
             decayed = max(0.0, row["current_score"] -
-                          (now - row["last_seen"]) * self.scorer.config.decay_per_second)
+                          max(0.0, now - row["last_seen"]) * self.scorer.config.decay_per_second)
             self.scorer.seed(row["ip"], decayed)
 
     def _checkpoint_scores(self) -> None:
@@ -173,6 +175,8 @@ class Proxy:
         if topic == "home/door/motion":
             try:
                 motion = float(payload)
+                if not math.isfinite(motion):
+                    return
             except ValueError:
                 return
             self.thingspeak.update({"field1": motion}, status=f"motion={payload}")
@@ -180,8 +184,9 @@ class Proxy:
             try:
                 status = json.loads(payload)
                 locked_value = status["locked"]
-                led_value = status.get("led_on", locked_value)
-                if not isinstance(locked_value, (bool, int)) or not isinstance(led_value, (bool, int)):
+                led_value = status.get("led_on", not locked_value)
+                if (not isinstance(locked_value, (bool, int)) or locked_value not in (0, 1) or
+                        not isinstance(led_value, (bool, int)) or led_value not in (0, 1)):
                     raise ValueError("locked and led_on must be booleans")
                 locked = bool(locked_value)
                 led_on = bool(led_value)
@@ -198,7 +203,8 @@ class Proxy:
     async def disconnect_ip_if_critical(self, ip: str) -> None:
         if self.scorer.action(ip) != "decoy" or ip in self.scorer.config.force_decoy:
             return
-        writers = list(self.connections.get(ip, set()))
+        writers = [writer for writer in self.connections.get(ip, set())
+                   if writer not in self.decoy_connections]
         if writers:
             LOGGER.info("risk threshold crossed; closing %d connection(s) for %s", len(writers), ip)
         for writer in writers:
@@ -263,9 +269,13 @@ class Proxy:
                 await asyncio.sleep(number(self.config, "THROTTLE_DELAY_SEC"))
             port_key = "DECOY_PORT" if backend == "decoy" else "REAL_PORT"
             host_key = "DECOY_HOST" if backend == "decoy" else "REAL_HOST"
-            backend_reader, backend_writer = await asyncio.open_connection(
-                self.config.get(host_key, "127.0.0.1"), integer(self.config, port_key)
+            backend_reader, backend_writer = await asyncio.wait_for(
+                asyncio.open_connection(self.config.get(host_key, "127.0.0.1"),
+                                        integer(self.config, port_key)),
+                timeout=self.connect_timeout,
             )
+            if backend == "decoy":
+                self.decoy_connections.add(writer)
             profile_name, profile = select_profile(self.config.get("DECOY_PROFILE", "auto"), info.client_id)
             session_id = db.start_session(ip, backend, time.time(), profile=profile_name if backend == "decoy" else "")
             self.log_event(
@@ -308,6 +318,7 @@ class Proxy:
             self.log_event(ip, "internal connection error")
         finally:
             self.active_connections -= 1
+            self.decoy_connections.discard(writer)
             self.connections[ip].discard(writer)
             if not self.connections[ip]:
                 del self.connections[ip]
@@ -368,6 +379,7 @@ class Proxy:
 
     async def inspect_client_packet(self, packet: bytes, ip: str, backend: str) -> bool:
         kind = packet_type(packet)
+        trusted = ip in self.scorer.config.whitelist
         if kind == 8:
             topics = parse_subscribe(packet)
             for topic in topics:
@@ -379,7 +391,8 @@ class Proxy:
             if has_dangerous_wildcard(topics):
                 self.scorer.record_wildcard(ip)
                 self.log_event(ip, f"wildcard subscribe: {','.join(topics)}",
-                               signal="wildcard_subscription", points=self.scorer.config.wildcard_weight)
+                               signal="" if trusted else "wildcard_subscription",
+                               points=0 if trusted else self.scorer.config.wildcard_weight)
                 await self.disconnect_ip_if_critical(ip)
                 if backend == "real" and self.scorer.action(ip) in {"restrict", "decoy"}:
                     self.log_event(ip, "withheld wildcard subscription from real broker",
@@ -410,7 +423,8 @@ class Proxy:
                 if ip not in self.scorer.config.whitelist:
                     self.scorer.record_command_publish(ip)
                 self.log_event(ip, f"command publish topic={published.topic} payload={payload[:200]}",
-                               signal="suspicious_publish", points=self.scorer.config.command_weight)
+                               signal="" if trusted else "suspicious_publish",
+                               points=0 if trusted else self.scorer.config.command_weight)
                 _, sequence = self.scorer.record_command_sequence(ip)
                 if sequence:
                     self.log_event(ip, "wildcard-to-command sequence detected",
@@ -458,7 +472,8 @@ class Proxy:
                 if backend == "real" and code in (4, 5):
                     _, points = self.scorer.record_failed_auth(ip)
                     self.log_event(ip, f"failed auth CONNACK={code} points={points:g}",
-                                   signal="failed_auth", points=points)
+                                   signal="" if ip in self.scorer.config.whitelist else "failed_auth",
+                                   points=points)
                     await self.disconnect_ip_if_critical(ip)
 
 

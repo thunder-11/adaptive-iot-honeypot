@@ -1,8 +1,25 @@
 import json
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from pi import db
 from pi.security import behavior_fingerprint, category_for_signal, risk_level
+
+
+def test_database_context_closes_connection_after_commit_and_rollback(tmp_path):
+    path = tmp_path / "handles.db"
+    with db.connect(path) as connection:
+        connection.execute("INSERT INTO system_state VALUES ('committed', 'yes')")
+    with pytest.raises(sqlite3.ProgrammingError):
+        connection.execute("SELECT 1")
+    with pytest.raises(RuntimeError):
+        with db.connect(path) as failed:
+            failed.execute("INSERT INTO system_state VALUES ('rolled-back', 'no')")
+            raise RuntimeError("abort")
+    assert db.system_state("committed", path) == "yes"
+    assert db.system_state("rolled-back", path) == ""
 
 
 def test_classification_risk_and_fingerprint_are_explainable():

@@ -304,9 +304,7 @@ Then run **on the Pi**:
 
 ```bash
 cd ~/adaptive-iot-honeypot
-set -a
-source config.env
-set +a
+eval "$(.venv/bin/python pi/config.py --shell)"
 mosquitto_sub -h 127.0.0.1 -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t 'home/door/#' -v
 ```
 
@@ -317,9 +315,7 @@ with `source=esp32`. Stop this subscriber later with Ctrl+C.
 
 ```bash
 cd ~/adaptive-iot-honeypot
-set -a
-source config.env
-set +a
+eval "$(.venv/bin/python pi/config.py --shell)"
 mosquitto_pub -h 127.0.0.1 -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t home/door/lock -m unlock
 ```
 
@@ -330,7 +326,7 @@ Now lock it again before the attack:
 mosquitto_pub -h 127.0.0.1 -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t home/door/lock -m lock
 ```
 
-Expected: LOCKED, configured LED ON. Stop here and fix the legitimate path if
+Expected: LOCKED, configured LED OFF. Stop here and fix the legitimate path if
 these commands do not work. Send legitimate control commands from Pi loopback;
 using the attack laptop for controls would mix both roles under one source IP.
 
@@ -382,9 +378,7 @@ important final condition is attacker in decoy and legitimate device responsive.
 
 ```bash
 cd ~/adaptive-iot-honeypot
-set -a
-source config.env
-set +a
+eval "$(.venv/bin/python pi/config.py --shell)"
 mosquitto_pub -h 127.0.0.1 -p "$PROXY_PORT" -u "$REAL_USER" -P "$REAL_PASS" -t home/door/lock -m lock
 ```
 
@@ -550,7 +544,7 @@ $Pub = Get-RequiredExecutable 'mosquitto_pub.exe'
 & $Pub -h 127.0.0.1 -p $Config.PROXY_PORT -u $Config.REAL_USER -P $Config.REAL_PASS -t home/door/lock -m unlock
 ```
 
-Confirm UNLOCKED/LED OFF, then relock:
+Confirm UNLOCKED/LED ON, then relock:
 
 ```powershell
 & $Pub -h 127.0.0.1 -p $Config.PROXY_PORT -u $Config.REAL_USER -P $Config.REAL_PASS -t home/door/lock -m lock
